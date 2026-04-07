@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Environment variables — NEVER commit these
+.env
+*.env
+
+# Node
+node_modules/
+dist/
+.next/
+
+# Mac
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
