@@ -6,6 +6,9 @@ __pycache__/
 venv/
 *.egg-info/
 
+#Database
+*.db
+
 # Environment variables — NEVER commit these
 .env
 *.env
