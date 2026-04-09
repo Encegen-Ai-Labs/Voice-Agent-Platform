@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import Base, engine
-from app.models import workspace, user, agent, phone_number, call
+import app.models  
 app = FastAPI(
     title="Voice-Agent-Platform",
     description="AI Voice Agent Platform",
