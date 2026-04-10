@@ -13,7 +13,6 @@ class Agent(Base):
     )
 
     name: Mapped[str] = mapped_column(String, nullable=False)
-    agent_type: Mapped[str | None] = mapped_column(String)
     system_prompt: Mapped[str | None] = mapped_column(String)
     voice: Mapped[str | None] = mapped_column(String)
     llm_model: Mapped[str | None] = mapped_column(String)

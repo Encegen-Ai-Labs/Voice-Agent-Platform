@@ -14,7 +14,7 @@ class PhoneNumber(Base):
     agent_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("agents.id")
     )
-
+    type: Mapped[str] = mapped_column(String, default="both")
     number: Mapped[str] = mapped_column(String, unique=True, nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(
