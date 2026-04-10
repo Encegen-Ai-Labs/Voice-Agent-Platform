@@ -1,11 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
+from app.database import Base, engine
+import app.models  
 app = FastAPI(
     title="Voice-Agent-Platform",
     description="AI Voice Agent Platform",
     version="0.1.0"
 )
+Base.metadata.create_all(bind=engine)
 
 app.add_middleware(
     CORSMiddleware,
