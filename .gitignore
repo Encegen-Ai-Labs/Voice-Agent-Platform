@@ -23,3 +23,9 @@ dist/
 .idea/
 
 test_*.py
+
+*.mp3
+*.wav
+*.ogg
+*.mp4
+*.m4a
