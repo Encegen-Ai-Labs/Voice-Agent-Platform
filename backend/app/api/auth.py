@@ -3,24 +3,24 @@ from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app.schemas.auth import RegisterRequest, LoginRequest, AuthResponse
 from app.services.auth_service import register_user, login_user
-
+from app.database import get_db
+from app.core.security import create_access_token
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
 
-# DB dependency
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 @router.post("/register", response_model=AuthResponse)
 def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     user = register_user(db, payload.email, payload.password, payload.workspace_name)
 
-    token = login_user(db, payload.email, payload.password)
+
+
+    token = create_access_token({
+        "user_id": str(user.id),
+        "workspace_id": str(user.workspace_id)
+    })
+ 
 
     return {"access_token": token}
 
