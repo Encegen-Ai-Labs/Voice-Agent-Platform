@@ -23,9 +23,12 @@ dist/
 .idea/
 
 test_*.py
+test_output.*
 
 *.mp3
 *.wav
 *.ogg
 *.mp4
 *.m4a
+
+.claude/
