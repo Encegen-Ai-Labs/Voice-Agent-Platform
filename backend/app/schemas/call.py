@@ -1,16 +1,17 @@
 from pydantic import BaseModel
 from uuid import UUID
 from datetime import datetime
+from typing import Literal
 
 
 class CallCreate(BaseModel):
     agent_id: UUID
     phone_number: str | None = None
-    direction: str | None = None
+    direction: Literal["inbound", "outbound"] | None = None
 
 
 class CallUpdate(BaseModel):
-    status: str | None = None
+    status: Literal["initiated", "ongoing", "completed", "failed"] | None = None
     transcript: str | None = None
     sentiment: str | None = None
     duration: int | None = None

@@ -56,3 +56,17 @@ def update_call(db: Session, workspace_id: UUID, call_id: UUID, data):
     db.commit()
     db.refresh(call)
     return call
+
+def delete_call(db: Session, workspace_id: UUID, call_id: UUID):
+    call = db.query(Call).filter(
+        Call.id == call_id,
+        Call.workspace_id == workspace_id
+    ).first()
+
+    if not call:
+        raise HTTPException(status_code=404, detail="Call not found")
+
+    db.delete(call)
+    db.commit()
+
+    return {"detail": "Call deleted successfully"}

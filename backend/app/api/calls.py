@@ -8,7 +8,8 @@ from app.services.call_service import (
     create_call,
     get_calls,
     get_call,
-    update_call
+    update_call,
+    delete_call
 )
 
 router = APIRouter(prefix="/calls", tags=["Calls"])
@@ -48,3 +49,11 @@ def update_call_endpoint(
     current_user=Depends(get_current_user)
 ):
     return update_call(db, current_user["workspace_id"], call_id, data)
+
+@router.delete("/{call_id}")
+def delete_call_endpoint(
+    call_id: UUID,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user)
+):
+    return delete_call(db, current_user["workspace_id"], call_id)
