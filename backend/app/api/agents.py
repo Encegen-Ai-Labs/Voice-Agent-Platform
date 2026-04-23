@@ -17,7 +17,7 @@ router = APIRouter(prefix="/agents", tags=["Agents"])
 
 
 @router.post("", response_model=AgentResponse)
-def create(
+def create_agent_endpoint(
     data: AgentCreate,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
@@ -34,7 +34,7 @@ def list_agents(
 
 
 @router.get("/{agent_id}", response_model=AgentResponse)
-def get(
+def get_agent_endpoint(
     agent_id: UUID,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
@@ -43,7 +43,7 @@ def get(
 
 
 @router.put("/{agent_id}", response_model=AgentResponse)
-def update(
+def update_agent_endpoint(
     agent_id: UUID,
     data: AgentUpdate,
     db: Session = Depends(get_db),
@@ -53,7 +53,7 @@ def update(
 
 
 @router.delete("/{agent_id}")
-def delete(
+def delete_agent_endpoint(
     agent_id: UUID,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)

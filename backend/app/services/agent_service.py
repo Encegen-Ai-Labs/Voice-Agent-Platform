@@ -6,14 +6,15 @@ from app.models import Agent
 
 def create_agent(db: Session, workspace_id: UUID, data):
     agent = Agent(
-    workspace_id=workspace_id,
-    name=data.name.strip(),
-    system_prompt=data.system_prompt,
-    voice=data.voice,
-    llm_model=data.llm_model,
-    language=data.language,
-    is_active=True  
-)
+        workspace_id=workspace_id,
+        name=data.name.strip(),
+        system_prompt=data.system_prompt,
+        voice=data.voice,
+        llm_model=data.llm_model,
+        language=data.language,
+        is_active=True
+    )
+
     db.add(agent)
     db.commit()
     db.refresh(agent)
@@ -21,7 +22,9 @@ def create_agent(db: Session, workspace_id: UUID, data):
 
 
 def get_agents(db: Session, workspace_id: UUID):
-    return db.query(Agent).filter(Agent.workspace_id == workspace_id).all()
+    return db.query(Agent).filter(
+        Agent.workspace_id == workspace_id
+    ).all()
 
 
 def get_agent(db: Session, workspace_id: UUID, agent_id: UUID):
@@ -39,9 +42,9 @@ def get_agent(db: Session, workspace_id: UUID, agent_id: UUID):
 def update_agent(db: Session, workspace_id: UUID, agent_id: UUID, data):
     agent = get_agent(db, workspace_id, agent_id)
 
-    for field, value in data.dict(exclude_unset=True).items():
-        if value is None or value == "string":
-            continue
+    update_data = data.model_dump(exclude_unset=True)
+
+    for field, value in update_data.items():
         setattr(agent, field, value)
 
     db.commit()
@@ -54,4 +57,5 @@ def delete_agent(db: Session, workspace_id: UUID, agent_id: UUID):
 
     db.delete(agent)
     db.commit()
+
     return {"detail": "Agent deleted successfully"}
