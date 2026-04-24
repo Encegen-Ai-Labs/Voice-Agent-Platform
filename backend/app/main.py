@@ -5,6 +5,7 @@ import app.models
 from app.api import auth
 from app.api import agents
 from app.api import calls
+from app.api import websocket
 
 app = FastAPI(
     title="Voice-Agent-Platform",
@@ -15,6 +16,7 @@ app = FastAPI(
 app.include_router(auth.router)
 app.include_router(agents.router)
 app.include_router(calls.router)
+app.include_router(websocket.router)
 
 app.add_middleware(
     CORSMiddleware,
