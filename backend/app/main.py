@@ -4,6 +4,7 @@ from app.database import Base, engine
 import app.models  
 from app.api import auth
 from app.api import agents
+from app.api import calls
 
 app = FastAPI(
     title="Voice-Agent-Platform",
@@ -11,9 +12,9 @@ app = FastAPI(
     version="0.1.0"
 )
 
-
 app.include_router(auth.router)
 app.include_router(agents.router)
+app.include_router(calls.router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -26,7 +27,6 @@ app.add_middleware(
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "version": "0.1.0"}
-
 
 @app.get("/")
 async def root():
