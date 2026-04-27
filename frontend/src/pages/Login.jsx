@@ -20,24 +20,17 @@ export default function Login() {
     try {
       const res = await API.post("/auth/login", form);
 
-      // Store JWT — backend returns { access_token, token_type }
-      // NOTE: workspace_name is NOT returned by this backend's login response.
-      // The workspace label in TopBar will fall back to the user's email instead.
       localStorage.setItem("token", res.data.access_token);
-      localStorage.setItem("workspace", form.email); // use email as display label
+      localStorage.setItem("workspace", form.email);
 
-      // Force full reload so App.jsx re-reads localStorage
-      window.location.href = "/";
-
+      navigate("/");
     } catch (err) {
       if (err.response?.status === 429) {
         setError("Too many attempts. Please wait a minute.");
       } else if (err.response?.status === 401) {
         setError("Invalid email or password.");
       } else {
-        setError(
-          err.response?.data?.detail ?? "Something went wrong."
-        );
+        setError(err.response?.data?.detail ?? "Something went wrong.");
       }
     } finally {
       setLoading(false);
@@ -65,6 +58,9 @@ export default function Login() {
           onChange={(e) =>
             setForm({ ...form, email: e.target.value })
           }
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleLogin();
+          }}
         />
 
         <input
@@ -75,6 +71,9 @@ export default function Login() {
           onChange={(e) =>
             setForm({ ...form, password: e.target.value })
           }
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleLogin();
+          }}
         />
 
         <button
