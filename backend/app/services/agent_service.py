@@ -51,11 +51,22 @@ def update_agent(db: Session, workspace_id: UUID, agent_id: UUID, data):
     db.refresh(agent)
     return agent
 
+from app.models.call import Call
 
-def delete_agent(db: Session, workspace_id: UUID, agent_id: UUID):
-    agent = get_agent(db, workspace_id, agent_id)
+def delete_agent(db, workspace_id, agent_id):
+    agent = db.query(Agent).filter(
+        Agent.id == agent_id,
+        Agent.workspace_id == workspace_id
+    ).first()
 
+    if not agent:
+        raise Exception("Agent not found")
+
+    #  DELETE ALL CALLS FIRST
+    db.query(Call).filter(Call.agent_id == agent_id).delete()
+
+    # THEN DELETE AGENT
     db.delete(agent)
     db.commit()
 
-    return {"detail": "Agent deleted successfully"}
+    return {"message": "Agent deleted successfully"}
