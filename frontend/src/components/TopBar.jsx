@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import API from "../services/api";
 
 export default function TopBar() {
   const [workspaceName, setWorkspaceName] = useState("");
   const location = useLocation();
+  const navigate = useNavigate();
 
   const titles = {
     "/": "Dashboard",
@@ -15,15 +16,24 @@ export default function TopBar() {
   };
 
   useEffect(() => {
-    API.get("/auth/me")
-      .then((res) => setWorkspaceName(res.data.workspace_name))
-      .catch(() => setWorkspaceName(""));
+    const fetchUser = async () => {
+      try {
+        const res = await API.get("/auth/me");
+
+        // correct field from backend
+        setWorkspaceName(res.data.workspace_name);
+      } catch (err) {
+        console.error(err);
+        setWorkspaceName("");
+      }
+    };
+
+    fetchUser();
   }, []);
 
   const handleLogout = () => {
     localStorage.removeItem("token");
-    localStorage.removeItem("workspace");
-    window.location.href = "/login";
+    navigate("/login");
   };
 
   return (
@@ -33,8 +43,16 @@ export default function TopBar() {
       </h1>
 
       <div className="flex items-center gap-4">
-        <span className="text-sm text-gray-600">{workspaceName}</span>
-        <button onClick={handleLogout} className="text-red-500 text-sm">
+        {workspaceName && (
+          <span className="text-sm text-gray-600">
+            {workspaceName}
+          </span>
+        )}
+
+        <button
+          onClick={handleLogout}
+          className="text-red-500 text-sm"
+        >
           Logout
         </button>
       </div>
