@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException
 from uuid import UUID
 from app.models import Agent
+from app.models.call import Call
 
 
 def create_agent(db: Session, workspace_id: UUID, data):
@@ -51,7 +52,6 @@ def update_agent(db: Session, workspace_id: UUID, agent_id: UUID, data):
     db.refresh(agent)
     return agent
 
-from app.models.call import Call
 
 def delete_agent(db, workspace_id, agent_id):
     agent = db.query(Agent).filter(
@@ -60,7 +60,7 @@ def delete_agent(db, workspace_id, agent_id):
     ).first()
 
     if not agent:
-        raise Exception("Agent not found")
+        raise HTTPException(status_code=404, detail="Agent not found")
 
     #  DELETE ALL CALLS FIRST
     db.query(Call).filter(Call.agent_id == agent_id).delete()

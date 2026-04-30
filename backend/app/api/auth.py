@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-
 from app.database import get_db
 from app.schemas.auth import RegisterRequest, LoginRequest, AuthResponse
 from app.services.auth_service import register_user, login_user
@@ -8,6 +7,7 @@ from app.core.security import create_access_token, get_current_user
 from app.models.user import User
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
+
 
 @router.post("/register", response_model=AuthResponse)
 def register(payload: RegisterRequest, db: Session = Depends(get_db)):
@@ -26,14 +26,14 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     return {"access_token": token}
 
 
-
 @router.post("/login", response_model=AuthResponse)
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
-    token = login_user(db, payload.email, payload.password)
+    user = login_user(db, payload.email, payload.password)
 
-    user = db.query(User).filter(User.email == payload.email).first()
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
+    token = create_access_token({
+        "user_id": str(user.id),
+        "workspace_id": str(user.workspace_id)
+    })
 
     return {
         "access_token": token
