@@ -17,11 +17,11 @@ def register_user(db: Session, email: str, password: str, workspace_name: str):
         # Create workspace
         workspace = Workspace(name=workspace_name)
         db.add(workspace)
-        db.flush()  # get workspace.id
+        db.flush()
 
         # Create user
         user = User(
-            email = email.strip().lower(),
+            email=email.strip().lower(),
             password_hash=hash_password(password),
             workspace_id=workspace.id,
             role="owner"
@@ -42,9 +42,4 @@ def login_user(db: Session, email: str, password: str):
     if not user or not verify_password(password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    token = create_access_token({
-        "user_id": str(user.id),
-        "workspace_id": str(user.workspace_id)
-    })
-
-    return token
+    return user
