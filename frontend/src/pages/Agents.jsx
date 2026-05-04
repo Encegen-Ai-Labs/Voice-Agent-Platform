@@ -50,7 +50,7 @@ export default function Agents() {
       const res = await API.post("/agents", form);
       setAgents((prev) => [...prev, res.data]);
       resetModal();
-    } catch (err) {
+    } catch {
       alert("Failed to create agent");
     }
   };
@@ -62,7 +62,7 @@ export default function Agents() {
         prev.map((a) => (a.id === form.id ? res.data : a))
       );
       resetModal();
-    } catch (err) {
+    } catch {
       alert("Failed to update agent");
     }
   };
@@ -73,7 +73,7 @@ export default function Agents() {
     try {
       await API.delete(`/agents/${id}`);
       setAgents((prev) => prev.filter((a) => a.id !== id));
-    } catch (err) {
+    } catch {
       alert("Failed to delete agent");
     }
   };
@@ -91,24 +91,37 @@ export default function Agents() {
   };
 
   return (
-    <div>
-      <div className="flex justify-between mb-6">
-        <h1 className="text-2xl font-semibold">Agents</h1>
+    <div className="space-y-8">
+      
+      {/* HEADER */}
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900">
+            Agents
+          </h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Manage your voice agents and configurations
+          </p>
+        </div>
 
         <button
           onClick={() => setShowModal(true)}
-          className="bg-gray-900 text-white px-4 py-2 rounded"
+          className="bg-gray-900 text-white px-4 py-2 rounded-lg hover:bg-black transition"
         >
-          + Create Agent
+          + New Agent
         </button>
       </div>
 
+      {/* CONTENT */}
       {loading ? (
-        <p>Loading...</p>
+        <p className="text-gray-500">Loading...</p>
       ) : agents.length === 0 ? (
-        <p className="text-gray-400">No agents yet</p>
+        <div className="border rounded-xl p-10 text-center text-gray-400 bg-white">
+          No agents created yet
+        </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+
           {agents.map((agent) => (
             <div
               key={agent.id}
@@ -117,37 +130,52 @@ export default function Agents() {
                   selectedAgent?.id === agent.id ? null : agent
                 )
               }
-              className="bg-white border rounded-lg shadow-sm p-4 hover:shadow-md transition cursor-pointer"
+              className="group bg-white border rounded-2xl p-5 hover:shadow-lg transition cursor-pointer flex flex-col justify-between"
             >
-              <h2 className="font-semibold text-lg">{agent.name}</h2>
+              
+              {/* TOP */}
+              <div className="space-y-3">
+                <div className="flex justify-between items-start">
+                  <h2 className="text-lg font-semibold text-gray-900">
+                    {agent.name}
+                  </h2>
 
-              <p className="text-sm text-gray-500 mt-1">
-                {agent.language || "No language"}
-              </p>
+                  <span className="text-xs text-gray-400">
+                    {agent.language || "—"}
+                  </span>
+                </div>
 
-              <p className="text-xs text-gray-400 mt-1">
-                {agent.llm_model}
-              </p>
-
-              <div className="mt-4 text-sm space-y-1">
-                <p><b>Voice:</b> {agent.voice || "—"}</p>
-                <p><b>Prompt:</b> {agent.system_prompt || "—"}</p>
+                <p className="text-xs text-gray-400">
+                  {agent.llm_model}
+                </p>
               </div>
 
-              {/*  NEW: SHOW ID */}
+              {/* PROMPT (SOFT BOX STYLE) */}
+              <div className="mt-4 bg-gray-50 border rounded-lg p-3 text-sm text-gray-600 line-clamp-3">
+                {agent.system_prompt || "No prompt set"}
+              </div>
+
+              {/* DETAILS */}
+              <div className="mt-4 text-sm text-gray-600">
+                <span className="text-gray-400">Voice:</span>{" "}
+                {agent.voice || "—"}
+              </div>
+
+              {/* ID */}
               {selectedAgent?.id === agent.id && (
-                <div className="mt-3 text-xs text-gray-500">
-                  ID: {agent.id}
+                <div className="mt-3 text-xs text-gray-400 break-all">
+                  {agent.id}
                 </div>
               )}
 
-              <div className="flex justify-between mt-4">
+              {/* ACTIONS */}
+              <div className="flex justify-between items-center mt-5 pt-4 border-t opacity-80 group-hover:opacity-100 transition">
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
                     handleEdit(agent);
                   }}
-                  className="text-blue-600 text-sm"
+                  className="text-blue-600 text-sm hover:underline"
                 >
                   Edit
                 </button>
@@ -157,20 +185,22 @@ export default function Agents() {
                     e.stopPropagation();
                     handleDelete(agent.id);
                   }}
-                  className="text-red-600 text-sm"
+                  className="text-red-500 text-sm hover:underline"
                 >
                   Delete
                 </button>
               </div>
             </div>
           ))}
+
         </div>
       )}
 
+      {/* MODAL */}
       {showModal && (
         <div className="fixed inset-0 bg-black/30 flex justify-center items-center">
-          <div className="bg-white p-6 rounded-lg w-96 shadow-lg">
-            <h2 className="mb-4 font-semibold">
+          <div className="bg-white p-6 rounded-xl w-96 shadow-lg">
+            <h2 className="mb-4 font-semibold text-lg">
               {editing ? "Edit Agent" : "Create Agent"}
             </h2>
 
@@ -229,7 +259,7 @@ export default function Agents() {
 
               <button
                 onClick={editing ? handleUpdate : handleCreate}
-                className="bg-gray-900 text-white px-4 py-2 rounded"
+                className="bg-gray-900 text-white px-4 py-2 rounded-lg"
               >
                 {editing ? "Update" : "Create"}
               </button>
