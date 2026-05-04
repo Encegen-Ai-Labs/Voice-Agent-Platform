@@ -23,7 +23,7 @@ export default function Agents() {
   const [agents, setAgents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedAgent, setSelectedAgent] = useState(null);
-
+  const [expanded, setExpanded] = useState({});
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -151,9 +151,26 @@ export default function Agents() {
               </div>
 
               {/* PROMPT (SOFT BOX STYLE) */}
-              <div className="mt-4 bg-gray-50 border rounded-lg p-3 text-sm text-gray-600 line-clamp-3">
-                {agent.system_prompt || "No prompt set"}
-              </div>
+              <div className="mt-4 bg-gray-50 border rounded-lg p-3 text-sm text-gray-600">
+                  <p className={expanded[agent.id] ? "" : "line-clamp-3"}>
+                    {agent.system_prompt || "No prompt set"}
+                  </p>
+
+                  {agent.system_prompt && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setExpanded((prev) => ({
+                          ...prev,
+                          [agent.id]: !prev[agent.id],
+                        }));
+                      }}
+                      className="text-xs text-blue-600 mt-2"
+                    >
+                      {expanded[agent.id] ? "Show less" : "Show more"}
+                    </button>
+                  )}
+                </div>
 
               {/* DETAILS */}
               <div className="mt-4 text-sm text-gray-600">
