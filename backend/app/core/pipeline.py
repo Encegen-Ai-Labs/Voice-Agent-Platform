@@ -1,9 +1,10 @@
+import io
 import os
 from dataclasses import dataclass, field
 
 from deepgram import DeepgramClient
 from groq import Groq
-import edge_tts
+import gtts
 
 
 @dataclass
@@ -12,7 +13,6 @@ class AgentConfig:
         "You are a helpful voice assistant. "
         "Keep responses concise and conversational, suitable for text-to-speech."
     )
-    voice: str = "en-US-JennyNeural"
     llm_model: str = "llama-3.3-70b-versatile"
     language: str = "en"
 
@@ -65,12 +65,9 @@ class VoicePipeline:
 
     async def _synthesize(self, text: str) -> bytes:
         try:
-            communicate = edge_tts.Communicate(text, self.config.voice)
-            chunks: list[bytes] = []
-            async for chunk in communicate.stream():
-                if chunk["type"] == "audio":
-                    chunks.append(chunk["data"])
-            return b"".join(chunks)
+            buf = io.BytesIO()
+            gtts.gTTS(text=text, lang=self.config.language).write_to_fp(buf)
+            return buf.getvalue()
         except Exception as e:
             raise RuntimeError(f"TTS failed: {e}") from e
 
