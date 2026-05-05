@@ -23,10 +23,13 @@ export default function Agents() {
   const [agents, setAgents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedAgent, setSelectedAgent] = useState(null);
-  const [expanded, setExpanded] = useState({});
+
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [error, setError] = useState("");
+
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
   useEffect(() => {
     fetchAgents();
@@ -43,19 +46,38 @@ export default function Agents() {
     }
   };
 
+  const validateForm = () => {
+    if (!form.name.trim()) return "Agent name is required";
+    if (!form.system_prompt.trim()) return "System prompt is required";
+    if (!form.voice.trim()) return "Voice is required";
+    if (!form.language.trim()) return "Language is required";
+    if (!form.llm_model) return "Model selection is required";
+    return "";
+  };
+
   const handleCreate = async () => {
-    if (!form.name.trim()) return alert("Name required");
+    const validationError = validateForm();
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
 
     try {
       const res = await API.post("/agents", form);
       setAgents((prev) => [...prev, res.data]);
       resetModal();
     } catch {
-      alert("Failed to create agent");
+      setError("Failed to create agent");
     }
   };
 
   const handleUpdate = async () => {
+    const validationError = validateForm();
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
     try {
       const res = await API.put(`/agents/${form.id}`, form);
       setAgents((prev) =>
@@ -63,18 +85,19 @@ export default function Agents() {
       );
       resetModal();
     } catch {
-      alert("Failed to update agent");
+      setError("Failed to update agent");
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!confirm("Delete this agent?")) return;
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
 
     try {
-      await API.delete(`/agents/${id}`);
-      setAgents((prev) => prev.filter((a) => a.id !== id));
+      await API.delete(`/agents/${deleteTarget}`);
+      setAgents((prev) => prev.filter((a) => a.id !== deleteTarget));
+      setDeleteTarget(null);
     } catch {
-      alert("Failed to delete agent");
+      setError("Failed to delete agent");
     }
   };
 
@@ -88,6 +111,7 @@ export default function Agents() {
     setShowModal(false);
     setEditing(false);
     setForm(EMPTY_FORM);
+    setError("");
   };
 
   return (
@@ -106,7 +130,7 @@ export default function Agents() {
 
         <button
           onClick={() => setShowModal(true)}
-          className="bg-gray-900 text-white px-4 py-2 rounded-lg hover:bg-black transition"
+          className="bg-gray-900 text-white px-4 py-2 rounded-lg"
         >
           + New Agent
         </button>
@@ -130,69 +154,42 @@ export default function Agents() {
                   selectedAgent?.id === agent.id ? null : agent
                 )
               }
-              className="group bg-white border rounded-2xl p-5 hover:shadow-lg transition cursor-pointer flex flex-col justify-between"
+              className="bg-white border rounded-2xl p-5 hover:shadow-lg transition cursor-pointer flex flex-col justify-between"
             >
               
-              {/* TOP */}
-              <div className="space-y-3">
-                <div className="flex justify-between items-start">
-                  <h2 className="text-lg font-semibold text-gray-900">
-                    {agent.name}
-                  </h2>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">
+                  {agent.name}
+                </h2>
 
-                  <span className="text-xs text-gray-400">
-                    {agent.language || "—"}
-                  </span>
-                </div>
-
-                <p className="text-xs text-gray-400">
+                <p className="text-xs text-gray-400 mt-1">
                   {agent.llm_model}
                 </p>
-              </div>
 
-              {/* PROMPT (SOFT BOX STYLE) */}
-              <div className="mt-4 bg-gray-50 border rounded-lg p-3 text-sm text-gray-600">
-                  <p className={expanded[agent.id] ? "" : "line-clamp-3"}>
-                    {agent.system_prompt || "No prompt set"}
-                  </p>
-
-                  {agent.system_prompt && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setExpanded((prev) => ({
-                          ...prev,
-                          [agent.id]: !prev[agent.id],
-                        }));
-                      }}
-                      className="text-xs text-blue-600 mt-2"
-                    >
-                      {expanded[agent.id] ? "Show less" : "Show more"}
-                    </button>
-                  )}
+                {/* SCROLLABLE PROMPT */}
+                <div className="mt-3 bg-gray-50 border rounded-lg p-3 text-sm text-gray-600 max-h-24 overflow-y-auto">
+                  {agent.system_prompt || "No prompt set"}
                 </div>
 
-              {/* DETAILS */}
-              <div className="mt-4 text-sm text-gray-600">
-                <span className="text-gray-400">Voice:</span>{" "}
-                {agent.voice || "—"}
+                <p className="mt-3 text-sm text-gray-600">
+                  <span className="text-gray-400">Voice:</span>{" "}
+                  {agent.voice || "—"}
+                </p>
+
+                {selectedAgent?.id === agent.id && (
+                  <div className="mt-2 text-xs text-gray-400 break-all">
+                    {agent.id}
+                  </div>
+                )}
               </div>
 
-              {/* ID */}
-              {selectedAgent?.id === agent.id && (
-                <div className="mt-3 text-xs text-gray-400 break-all">
-                  {agent.id}
-                </div>
-              )}
-
-              {/* ACTIONS */}
-              <div className="flex justify-between items-center mt-5 pt-4 border-t opacity-80 group-hover:opacity-100 transition">
+              <div className="flex justify-between mt-4 pt-3 border-t">
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
                     handleEdit(agent);
                   }}
-                  className="text-blue-600 text-sm hover:underline"
+                  className="text-blue-600 text-sm"
                 >
                   Edit
                 </button>
@@ -200,9 +197,9 @@ export default function Agents() {
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleDelete(agent.id);
+                    setDeleteTarget(agent.id);
                   }}
-                  className="text-red-500 text-sm hover:underline"
+                  className="text-red-500 text-sm"
                 >
                   Delete
                 </button>
@@ -213,13 +210,19 @@ export default function Agents() {
         </div>
       )}
 
-      {/* MODAL */}
+      {/* CREATE / EDIT MODAL */}
       {showModal && (
         <div className="fixed inset-0 bg-black/30 flex justify-center items-center">
           <div className="bg-white p-6 rounded-xl w-96 shadow-lg">
             <h2 className="mb-4 font-semibold text-lg">
               {editing ? "Edit Agent" : "Create Agent"}
             </h2>
+
+            {error && (
+              <div className="mb-3 text-sm text-red-500">
+                {error}
+              </div>
+            )}
 
             <input
               className="w-full mb-3 p-2 border rounded"
@@ -230,7 +233,8 @@ export default function Agents() {
               }
             />
 
-            <input
+            <textarea
+              rows={4}
               className="w-full mb-3 p-2 border rounded"
               placeholder="System Prompt"
               value={form.system_prompt}
@@ -279,6 +283,34 @@ export default function Agents() {
                 className="bg-gray-900 text-white px-4 py-2 rounded-lg"
               >
                 {editing ? "Update" : "Create"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE MODAL */}
+      {deleteTarget && (
+        <div className="fixed inset-0 bg-black/30 flex justify-center items-center">
+          <div className="bg-white p-6 rounded-xl w-80 shadow-lg">
+            <h2 className="text-lg font-semibold mb-3">
+              Delete Agent
+            </h2>
+
+            <p className="text-sm text-gray-600 mb-4">
+              Are you sure you want to delete this agent?
+            </p>
+
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setDeleteTarget(null)}>
+                Cancel
+              </button>
+
+              <button
+                onClick={handleDelete}
+                className="bg-red-500 text-white px-4 py-2 rounded"
+              >
+                Delete
               </button>
             </div>
           </div>
