@@ -28,23 +28,6 @@ export default function Calls() {
   useEffect(() => {
     fetchCalls();
     fetchAgents();
-
-    const interval = setInterval(() => {
-      setCalls((prev) =>
-        prev.map((c) => {
-          if (c.status === "initiated") return { ...c, status: "ongoing" };
-          if (c.status === "ongoing") {
-            return {
-              ...c,
-              status: Math.random() > 0.2 ? "completed" : "failed",
-            };
-          }
-          return c;
-        })
-      );
-    }, 5000);
-
-    return () => clearInterval(interval);
   }, []);
 
   const fetchCalls = async () => {
@@ -118,7 +101,6 @@ export default function Calls() {
           {groupedCalls.map(({ agent, calls }) => (
             <div key={agent.id} className="bg-white border rounded-2xl p-5 shadow-sm">
 
-              {/* AGENT HEADER */}
               <div className="flex justify-between items-center mb-3">
                 <div>
                   <h2 className="font-semibold text-gray-900">{agent.name}</h2>
@@ -146,14 +128,12 @@ export default function Calls() {
                 </div>
               )}
 
-              {/* CALL LIST */}
               {calls.length === 0 ? (
                 <p className="text-sm text-gray-400">No calls yet</p>
               ) : (
                 calls.map((call) => (
                   <div key={call.id} className="border-t py-3">
 
-                    {/* BASIC INFO */}
                     <div
                       className="flex justify-between cursor-pointer"
                       onClick={() =>
@@ -186,7 +166,6 @@ export default function Calls() {
                       </div>
                     </div>
 
-                    {/* DETAILS */}
                     {expandedCalls[call.id] && (
                       <div className="mt-2 text-sm space-y-2 bg-gray-50 p-3 rounded">
 
@@ -229,7 +208,6 @@ export default function Calls() {
         </div>
       )}
 
-      {/* MODAL */}
       {showModal && (
         <div className="fixed inset-0 bg-black/30 flex justify-center items-center">
           <div className="bg-white p-6 rounded-xl w-96 shadow-lg">
@@ -275,7 +253,19 @@ export default function Calls() {
             </select>
 
             <div className="flex justify-end gap-2">
-              <button onClick={() => setShowModal(false)}>Cancel</button>
+              <button
+                onClick={() => {
+                  setShowModal(false);
+                  setForm({
+                    agent_id: "",
+                    phone_number: "",
+                    direction: "outbound",
+                  });
+                }}
+              >
+                Cancel
+              </button>
+
               <button
                 onClick={handleCreateCall}
                 className="bg-gray-900 text-white px-4 py-2 rounded-lg"
