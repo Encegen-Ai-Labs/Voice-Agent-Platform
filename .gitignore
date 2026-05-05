@@ -6,6 +6,9 @@ __pycache__/
 venv/
 *.egg-info/
 
+#Database
+*.db
+
 # Environment variables — NEVER commit these
 .env
 *.env
@@ -21,3 +24,14 @@ dist/
 # IDE
 .vscode/
 .idea/
+
+test_*.py
+test_output.*
+
+*.mp3
+*.wav
+*.ogg
+*.mp4
+*.m4a
+
+.claude/
