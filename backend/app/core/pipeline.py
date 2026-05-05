@@ -38,6 +38,8 @@ class VoicePipeline:
                 model="nova-2",
                 smart_format=True,
                 language=self.config.language,
+                encoding="mulaw",
+                sample_rate=8000,
             )
             transcript = response.results.channels[0].alternatives[0].transcript
         except Exception as e:
