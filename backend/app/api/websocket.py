@@ -53,11 +53,14 @@ async def websocket_call(websocket: WebSocket):
 
             min_bytes = int(_MIN_AUDIO_SECONDS * _MULAW_SAMPLE_RATE)
             if len(audio_buffer) >= min_bytes:
-                response_audio = await pipeline.process_audio(bytes(audio_buffer))
-                await websocket.send_text(json.dumps({
-                    "event": "media",
-                    "media": {"payload": base64.b64encode(response_audio).decode("utf-8")},
-                }))
+                try:
+                    response_audio = await pipeline.process_audio(bytes(audio_buffer))
+                    await websocket.send_text(json.dumps({
+                        "event": "media",
+                        "media": {"payload": base64.b64encode(response_audio).decode("utf-8")},
+                    }))
+                except Exception as e:
+                    logger.error("Pipeline error: %s", e)
             else:
                 logger.debug("Buffer too short (%d bytes), discarding", len(audio_buffer))
 
@@ -65,5 +68,3 @@ async def websocket_call(websocket: WebSocket):
 
     except WebSocketDisconnect:
         pass
-    except Exception as e:
-        await websocket.close(code=1011, reason=str(e))
