@@ -20,6 +20,15 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
 
+    with op.batch_alter_table("workspaces") as batch_op:
+        batch_op.add_column(
+            sa.Column(
+                "webhook_url",
+                sa.String(),
+                nullable=True
+            )
+        )
+
     with op.batch_alter_table("phone_numbers") as batch_op:
         batch_op.alter_column(
             "agent_id",
@@ -36,3 +45,6 @@ def downgrade() -> None:
             existing_type=sa.Uuid(),
             nullable=False
         )
+
+    with op.batch_alter_table("workspaces") as batch_op:
+        batch_op.drop_column("webhook_url")
