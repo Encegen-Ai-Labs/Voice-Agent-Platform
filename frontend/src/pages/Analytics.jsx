@@ -15,6 +15,7 @@ import {
 export default function Analytics() {
   const [calls, setCalls] = useState([]);
   const [agents, setAgents] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetchData();
@@ -22,6 +23,8 @@ export default function Analytics() {
 
   const fetchData = async () => {
     try {
+      setLoading(true);
+
       const callsRes = await API.get("/calls");
       const agentsRes = await API.get("/agents");
 
@@ -29,6 +32,8 @@ export default function Analytics() {
       setAgents(agentsRes.data);
     } catch (err) {
       console.error(err);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -41,15 +46,17 @@ export default function Analytics() {
     (c) => c.status === "failed"
   ).length;
 
-  const successRate = calls.length
-    ? ((completedCalls / calls.length) * 100).toFixed(1)
+  const resolvedCalls = completedCalls + failedCalls;
+
+  const successRate = resolvedCalls
+    ? ((completedCalls / resolvedCalls) * 100).toFixed(1)
     : 0;
 
   const totalDuration = calls.reduce(
     (acc, c) => acc + (c.duration || 0),
     0
   );
-
+  
   const avgDuration = calls.length
     ? Math.floor(totalDuration / calls.length)
     : 0;
@@ -133,6 +140,20 @@ export default function Analytics() {
       calls: count,
     }))
     .sort((a, b) => b.calls - a.calls);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-[70vh]">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-gray-200 border-t-gray-900 rounded-full animate-spin" />
+
+          <p className="text-sm text-gray-500">
+            Loading analytics...
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto">
