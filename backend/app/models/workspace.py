@@ -13,12 +13,8 @@ class Workspace(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc)
     )
-
+    webhook_url: Mapped[str | None] = mapped_column(String, nullable=True)
     # relationships
-
-    users: Mapped[list["User"]] = relationship(back_populates="workspace")
-    agents: Mapped[list["Agent"]] = relationship(back_populates="workspace")
-
     users: Mapped[list["User"]] = relationship(
         back_populates="workspace"
     )
