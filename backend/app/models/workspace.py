@@ -15,5 +15,23 @@ class Workspace(Base):
     )
 
     # relationships
+
     users: Mapped[list["User"]] = relationship(back_populates="workspace")
     agents: Mapped[list["Agent"]] = relationship(back_populates="workspace")
+
+    users: Mapped[list["User"]] = relationship(
+        back_populates="workspace"
+    )
+
+    agents: Mapped[list["Agent"]] = relationship(
+        back_populates="workspace"
+    )
+
+    phone_numbers: Mapped[list["PhoneNumber"]] = relationship(
+        back_populates="workspace"
+    )
+
+    calls: Mapped[list["Call"]] = relationship(
+        back_populates="workspace"
+    )
+
