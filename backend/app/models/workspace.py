@@ -34,7 +34,6 @@ class Workspace(Base):
         DateTime,
         default=lambda: datetime.now(timezone.utc)
     )
-    webhook_url: Mapped[str | None] = mapped_column(String, nullable=True)
     # relationships
     users: Mapped[list["User"]] = relationship(
         back_populates="workspace"
@@ -51,3 +50,7 @@ class Workspace(Base):
     calls: Mapped[list["Call"]] = relationship(
         back_populates="workspace"
     )
+
+    api_keys: Mapped[list["APIKey"]] = relationship(
+    back_populates="workspace"
+  )
