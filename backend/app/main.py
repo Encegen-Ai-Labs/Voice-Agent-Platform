@@ -10,6 +10,7 @@ from app.api import telephony
 from app.api import workspaces
 from app.api import phone_numbers
 from app.api import api_keys
+from app.api import knowledge_base
 
 app = FastAPI(
     title="Voice-Agent-Platform",
@@ -25,6 +26,7 @@ app.include_router(telephony.router)
 app.include_router(workspaces.router)
 app.include_router(phone_numbers.router)
 app.include_router(api_keys.router)
+app.include_router(knowledge_base.router)
 
 
 app.add_middleware(

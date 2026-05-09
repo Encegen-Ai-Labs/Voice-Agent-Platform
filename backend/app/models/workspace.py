@@ -53,4 +53,7 @@ class Workspace(Base):
 
     api_keys: Mapped[list["APIKey"]] = relationship(
     back_populates="workspace"
-  )
+    )
+    knowledge_base_entries: Mapped[list["KnowledgeBase"]] = relationship(
+    back_populates="workspace"
+    )
