@@ -1,18 +1,11 @@
 import hashlib
 import secrets
-
+from app.core.security import _hash_api_key
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from uuid import UUID
 
 from app.models import APIKey
-
-
-def _hash_api_key(raw_key: str) -> str:
-
-    return hashlib.sha256(
-        raw_key.encode()
-    ).hexdigest()
 
 
 def create_api_key(
