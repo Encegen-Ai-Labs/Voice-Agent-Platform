@@ -14,12 +14,14 @@ from app.core.security import get_current_user
 from app.database import get_db
 
 from app.schemas.knowledge_base import (
-    KnowledgeBaseResponse
+    KnowledgeBaseResponse,
+    KnowledgeBaseListResponse
 )
 
 from app.services.knowledge_base_service import (
     create_knowledge_base_entry,
     get_knowledge_base_entries,
+    get_knowledge_base_entry,
     delete_knowledge_base_entry
 )
 
@@ -51,7 +53,7 @@ def upload_knowledge_base(
 
 @router.get(
     "",
-    response_model=list[KnowledgeBaseResponse]
+    response_model=list[KnowledgeBaseListResponse]
 )
 def list_knowledge_base_entries(
     db: Session = Depends(get_db),
@@ -61,6 +63,23 @@ def list_knowledge_base_entries(
     return get_knowledge_base_entries(
         db,
         current_user["workspace_id"]
+    )
+
+
+@router.get(
+    "/{knowledge_base_id}",
+    response_model=KnowledgeBaseResponse
+)
+def get_knowledge_base(
+    knowledge_base_id: UUID,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user)
+):
+
+    return get_knowledge_base_entry(
+        db,
+        current_user["workspace_id"],
+        knowledge_base_id
     )
 
 

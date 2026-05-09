@@ -188,6 +188,26 @@ def get_knowledge_base_entries(
         KnowledgeBase.created_at.desc()
     ).all()
 
+def get_knowledge_base_entry(
+    db: Session,
+    workspace_id: UUID,
+    knowledge_base_id: UUID
+):
+
+    knowledge_base_entry = db.query(
+        KnowledgeBase
+    ).filter(
+        KnowledgeBase.id == knowledge_base_id,
+        KnowledgeBase.workspace_id == workspace_id
+    ).first()
+
+    if not knowledge_base_entry:
+        raise HTTPException(
+            status_code=404,
+            detail="Knowledge base entry not found"
+        )
+
+    return knowledge_base_entry
 
 def delete_knowledge_base_entry(
     db: Session,

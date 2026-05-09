@@ -15,3 +15,15 @@ class KnowledgeBaseResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class KnowledgeBaseListResponse(BaseModel):
+
+    id: UUID
+    workspace_id: UUID
+    agent_id: UUID | None
+    filename: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
