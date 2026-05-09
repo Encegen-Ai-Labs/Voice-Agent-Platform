@@ -12,6 +12,7 @@ from app.api import phone_numbers
 from app.api import api_keys
 from app.api import knowledge_base
 
+
 app = FastAPI(
     title="Voice-Agent-Platform",
     description="AI Voice Agent Platform",
@@ -27,7 +28,6 @@ app.include_router(workspaces.router)
 app.include_router(phone_numbers.router)
 app.include_router(api_keys.router)
 app.include_router(knowledge_base.router)
-
 
 
 app.add_middleware(
