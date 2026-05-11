@@ -1,3 +1,4 @@
+import audioop
 import io
 import os
 from dataclasses import dataclass, field
@@ -5,6 +6,7 @@ from dataclasses import dataclass, field
 from deepgram import DeepgramClient
 from groq import Groq
 import gtts
+from pydub import AudioSegment
 
 
 @dataclass
@@ -65,9 +67,18 @@ class VoicePipeline:
 
     async def _synthesize(self, text: str) -> bytes:
         try:
-            buf = io.BytesIO()
-            gtts.gTTS(text=text, lang=self.config.language).write_to_fp(buf)
-            return buf.getvalue()
+            mp3_buf = io.BytesIO()
+            gtts.gTTS(text=text, lang=self.config.language).write_to_fp(mp3_buf)
+            mp3_bytes = mp3_buf.getvalue()
+
+            audio = AudioSegment.from_mp3(io.BytesIO(mp3_bytes))
+            audio = audio.set_frame_rate(8000).set_channels(1)
+
+            pcm_buf = io.BytesIO()
+            audio.export(pcm_buf, format="raw", codec="pcm_s16le")
+            pcm_bytes = pcm_buf.getvalue()
+
+            return audioop.lin2ulaw(pcm_bytes, 2)
         except Exception as e:
             raise RuntimeError(f"TTS failed: {e}") from e
 

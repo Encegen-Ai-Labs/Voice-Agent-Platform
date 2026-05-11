@@ -4,6 +4,7 @@ from fastapi import APIRouter, Request, Response
 from twilio.twiml.voice_response import VoiceResponse
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 router = APIRouter(prefix="/twilio", tags=["Telephony"])
 
@@ -18,10 +19,14 @@ if not all([TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER]):
 async def incoming_call(request: Request):
     host = request.headers.get("host", "localhost")
     response = VoiceResponse()
-    response.say("Hello, I am your AI assistant. Please speak after the tone.")
+    response.say("Hello, I am your AI assistant. How can I help you today?")
+    response.pause(length=1)
     connect = response.connect()
-    connect.stream(url=f"wss://{host}/ws/call")
-    return Response(content=str(response), media_type="application/xml")
+    connect.stream(url=f"wss://{host}/ws/call", track="inbound_track")
+    twiml = str(response)
+    print("TWIML:", twiml)
+    logger.info("Returning TwiML: %s", twiml)
+    return Response(content=twiml, media_type="application/xml")
 
 
 @router.post("/call-status")
