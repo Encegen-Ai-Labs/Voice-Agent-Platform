@@ -59,3 +59,7 @@ class Workspace(Base):
     knowledge_base_entries: Mapped[list["KnowledgeBase"]] = relationship(
       back_populates="workspace"
     )
+
+    usage_records: Mapped[list["UsageRecord"]] = relationship(
+        back_populates="workspace"
+    )
