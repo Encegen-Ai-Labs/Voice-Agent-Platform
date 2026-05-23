@@ -19,7 +19,6 @@ export default function Calls() {
   const [form, setForm] = useState({
     agent_id: "",
     phone_number: "",
-    direction: "outbound",
   });
 
   const [showModal, setShowModal] = useState(false);
@@ -60,17 +59,15 @@ export default function Calls() {
       setError("Please select an agent");
       return;
     }
-
     try {
-      const res = await API.post("/calls", form);
-
-      setCalls((prev) => [
-        { ...res.data, status: "initiated" },
-        ...prev,
-      ]);
+      const res = await API.post("/twilio/outbound-call", {
+                        agent_id: form.agent_id,
+                        phone_number: form.phone_number,
+                      });
 
       setShowModal(false);
       setError("");
+      await fetchCalls();
     } catch {
       setError("Failed to create call");
     }
@@ -217,20 +214,25 @@ export default function Calls() {
               <div className="mb-3 text-sm text-red-500">{error}</div>
             )}
 
-            <select
-              className="w-full mb-3 p-2 border rounded"
-              value={form.agent_id}
-              onChange={(e) =>
-                setForm({ ...form, agent_id: e.target.value })
-              }
+            
+    <select
+          className="w-full mb-3 p-2 border rounded"
+          value={form.agent_id}
+          onChange={(e) =>
+            setForm({ ...form, agent_id: e.target.value })
+          }
+        >
+          <option value="">Select Agent</option>
+
+          {agents.map((a) => (
+            <option
+              key={a.id}
+              value={a.id}
             >
-              <option value="">Select Agent</option>
-              {agents.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
+              {a.name}
+            </option>
+          ))}
+    </select>
 
             <input
               className="w-full mb-3 p-2 border rounded"
@@ -258,8 +260,7 @@ export default function Calls() {
                   setShowModal(false);
                   setForm({
                     agent_id: "",
-                    phone_number: "",
-                    direction: "outbound",
+                    phone_number: "",  
                   });
                 }}
               >

@@ -8,6 +8,18 @@ from app.database import SessionLocal
 from app.models.call import Call
 from app.models.phone_number import PhoneNumber
 
+from fastapi import Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from app.database import get_db
+from app.core.security import get_current_user
+from app.schemas.telephony import OutboundCallRequest
+
+from app.services.agent_service import get_agent
+from app.services.call_service import create_call
+
+from app.schemas.call import CallCreate
+
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
@@ -22,7 +34,9 @@ if not all([TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER]):
 
 @router.post("/incoming-call")
 async def incoming_call(request: Request):
-    host = request.headers.get("host", "localhost")
+    PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL")
+
+    host = PUBLIC_BASE_URL.replace("https://","").replace("http://","")
     call_id = request.query_params.get(
     "call_id"
     )
@@ -61,57 +75,74 @@ async def call_status(request: Request):
 from twilio.rest import Client
 
 
-@router.post("/test-call")
-async def test_call():
-    db = SessionLocal()
-    phone_number = db.query(
-        PhoneNumber
-    ).filter(
-        PhoneNumber.number == TWILIO_PHONE_NUMBER
-    ).first()
+@router.post("/outbound-call")
+async def outbound_call(
+    payload: OutboundCallRequest,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+
+    workspace_id = current_user["workspace_id"]
+
+    agent = get_agent(
+        db,
+        workspace_id,
+        payload.agent_id
+    )
+
+    phone_number = (
+            db.query(PhoneNumber)
+            .filter(
+                PhoneNumber.agent_id == agent.id,
+                PhoneNumber.workspace_id == workspace_id
+            )
+            .first()
+            )
 
     if not phone_number:
 
-        return {
-            "error": "Twilio phone number not mapped to workspace"
-        }
+        raise HTTPException(
+            status_code=400,
+            detail="No Twilio phone number assigned to this agent"
+        )
 
-    call_record = Call(
-    workspace_id=phone_number.workspace_id,
-    agent_id=phone_number.agent_id,
-    phone_number="+917058326485",
-    direction="outbound",
-    status="ongoing"
-)
+    call_data = CallCreate(
+        agent_id=agent.id,
+        phone_number=payload.phone_number,
+        direction="outbound"
+    )
 
-    db.add(call_record)
+    call_record = create_call(
+        db,
+        workspace_id,
+        call_data
+    )
 
-    db.commit()
-
-    db.refresh(call_record)
     client = Client(
         TWILIO_ACCOUNT_SID,
         TWILIO_AUTH_TOKEN
     )
 
+    PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL")
     call = client.calls.create(
-        to="+917058326485",
-        from_=TWILIO_PHONE_NUMBER,
-        url=f"https://dawn-hydrocodone-trek-cellular.trycloudflare.com/twilio/incoming-call?call_id={str(call_record.id)}" #this should be your ngrok or cloudflare url pointing to the /twilio/incoming-call endpoint
+        to=payload.phone_number,
+        from_=phone_number.number,
+        url=f"{PUBLIC_BASE_URL}/twilio/incoming-call?call_id={str(call_record.id)}"
     )
 
     call_record.twilio_call_sid = call.sid
-    db.add(call_record)
+
     db.commit()
 
+    db.refresh(call_record)
+
     logger.info(
-        "Outbound test call initiated: %s twilio_call_sid=%s",
-        call.sid,
+        "Outbound call initiated: %s",
         call.sid
     )
 
     return {
         "message": "Call initiated",
-        "call_sid": call.sid
+        "call_sid": call.sid,
+        "call_id": str(call_record.id)
     }
-

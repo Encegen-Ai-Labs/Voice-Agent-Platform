@@ -1,4 +1,5 @@
 import logging
+from subprocess import call
 import threading
 
 import httpx
@@ -78,12 +79,20 @@ def create_call(db: Session, workspace_id: UUID, data):
         direction=data.direction,
         status="initiated"
     )
+    try:
+        db.add(call)
+        db.commit()
+        db.refresh(call)
 
-    db.add(call)
-    db.commit()
-    db.refresh(call)
-
-    return call
+        return call
+    except HTTPException:
+        raise
+    except Exception:  
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to create call"
+        )
 
 
 def get_calls(db: Session, workspace_id: UUID):
@@ -146,7 +155,7 @@ def _update_usage_tracking(
 
         db.add(usage_record)
 
-    db.commit()
+    
 
 def update_call(db: Session, workspace_id: UUID, call_id: UUID, data):
 
@@ -159,26 +168,37 @@ def update_call(db: Session, workspace_id: UUID, call_id: UUID, data):
     for field, value in update_data.items():
         setattr(call, field, value)
 
-    db.commit()
-    db.refresh(call)
+    try:
+        db.commit()
+        db.refresh(call)
 
-    terminal_statuses = {"completed", "failed"}
+        terminal_statuses = {"completed", "failed"}
 
-    should_trigger_webhook = (
-        previous_status != call.status
-        and call.status in terminal_statuses
-    )
+        should_trigger_webhook = (
+            previous_status != call.status
+            and call.status in terminal_statuses
+        )
 
-    if should_trigger_webhook:
-        if call.status == "completed":
+        if should_trigger_webhook:
+            if call.status == "completed":
 
-            _update_usage_tracking(
-                db,
-                call
-            )
-        _trigger_webhook_background(call)
+                _update_usage_tracking(
+                    db,
+                    call
+                )
+            _trigger_webhook_background(call)
+        db.commit()
+        db.refresh(call)
 
-    return call
+        return call
+    except HTTPException:
+        raise
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to update call"
+        )
 
 
 def delete_call(db: Session, workspace_id: UUID, call_id: UUID):
@@ -194,7 +214,16 @@ def delete_call(db: Session, workspace_id: UUID, call_id: UUID):
             detail="Call not found"
         )
 
-    db.delete(call)
-    db.commit()
+    try:
+        db.delete(call)
+        db.commit()
 
-    return {"detail": "Call deleted successfully"}
+        return {"detail": "Call deleted successfully"}
+    except HTTPException:
+        raise   
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to delete call"
+        )
