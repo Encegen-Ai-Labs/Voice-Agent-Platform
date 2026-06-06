@@ -12,6 +12,7 @@ from app.api import phone_numbers
 from app.api import api_keys
 from app.api import knowledge_base
 
+
 from app.core.rate_limit import limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -25,6 +26,8 @@ from fastapi.exceptions import RequestValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
 logger = logging.getLogger(__name__)
+from app.api import analytics
+
 
 app = FastAPI(
     title="Voice-Agent-Platform",
@@ -110,6 +113,7 @@ app.include_router(workspaces.router)
 app.include_router(phone_numbers.router)
 app.include_router(api_keys.router)
 app.include_router(knowledge_base.router)
+app.include_router(analytics.router)
 
 
 app.add_middleware(
