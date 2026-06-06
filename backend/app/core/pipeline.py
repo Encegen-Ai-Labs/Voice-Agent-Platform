@@ -3,6 +3,14 @@ import io
 import os
 import time
 
+from uuid import UUID
+
+from sqlalchemy.orm import Session
+
+from app.models.knowledge_base import (
+    KnowledgeBase
+)
+
 from dataclasses import dataclass
 
 from deepgram import DeepgramClient
@@ -26,6 +34,10 @@ class AgentConfig:
     llm_model: str = "llama-3.3-70b-versatile"
 
     language: str = "en"
+
+    agent_id: UUID | None = None
+
+    db: Session | None = None
 
 
 class VoicePipeline:
@@ -116,6 +128,46 @@ class VoicePipeline:
             return None
 
         return transcript
+    
+    def _build_system_prompt(self) -> str:
+
+        base_prompt = self.config.system_prompt
+
+        if not self.config.agent_id:
+
+            return base_prompt
+
+        if not self.config.db:
+
+            return base_prompt
+
+        knowledge_entries = (
+            self.config.db.query(KnowledgeBase)
+            .filter(
+                KnowledgeBase.agent_id
+                == self.config.agent_id
+            )
+            .order_by(
+                KnowledgeBase.created_at.desc()
+            )
+            .limit(3)
+            .all()
+        )
+
+        if not knowledge_entries:
+
+            return base_prompt
+
+        knowledge_content = "\n\n".join(
+            entry.content
+            for entry in knowledge_entries
+        )
+
+        return (
+            f"{base_prompt}\n\n"
+            f"Knowledge Base:\n"
+            f"{knowledge_content}"
+        )
 
     def _generate_response(
         self,
@@ -128,7 +180,7 @@ class VoicePipeline:
             messages = [
                 {
                     "role": "system",
-                    "content": self.config.system_prompt
+                    "content": self._build_system_prompt()
                 }
             ]
 

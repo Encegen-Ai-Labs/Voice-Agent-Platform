@@ -1,4 +1,6 @@
 from uuid import UUID
+from app.core.rate_limit import limiter
+from fastapi import Request
 
 from fastapi import (
     APIRouter,
@@ -32,11 +34,10 @@ router = APIRouter(
 )
 
 
-@router.post(
-    "",
-    response_model=KnowledgeBaseResponse
-)
+@router.post("",response_model=KnowledgeBaseResponse)
+@limiter.limit("10/minute")
 def upload_knowledge_base(
+    request: Request,
     file: UploadFile = File(...),
     agent_id: UUID | None = Form(default=None),
     db: Session = Depends(get_db),

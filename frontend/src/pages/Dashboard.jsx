@@ -48,7 +48,7 @@ export default function Dashboard() {
         return {
           id: c.id,
           agent: agent?.name || "Unknown",
-          status: c.status === "initiated" ? "completed" : c.status,
+          status: c.status,
         };
       });
 

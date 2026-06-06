@@ -28,14 +28,14 @@ from uuid import UUID
 from app.database import SessionLocal
 from app.models.call import Call
 
+from app.models.agent import Agent
+
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 router = APIRouter(tags=["WebSocket"])
 
-pipeline = VoicePipeline(
-    AgentConfig()
-)
+
 
 # Twilio sends mulaw at 8000 Hz, 1 byte per sample
 _MULAW_SAMPLE_RATE = 8000
@@ -53,9 +53,12 @@ async def websocket_call(
     await websocket.accept()
 
     call_id = websocket.query_params.get(
-    "call_id"
-)
+        "call_id"
+    )
 
+    pipeline = VoicePipeline(
+    AgentConfig()
+    )    
     twilio_call_sid = None
 
     print("WEBSOCKET CALL_ID:", call_id)
@@ -121,11 +124,57 @@ async def websocket_call(
                     twilio_call_sid = data.get(
                         "callSid"
                     )
-
                     if not twilio_call_sid:
                         start_data = data.get("start", {})
                         twilio_call_sid = start_data.get("callSid")
                         print("EXTRACTED FROM START SUBOBJECT:", twilio_call_sid)
+                    try:
+
+                        db = SessionLocal()
+
+                        call = db.query(Call).filter(
+                            Call.twilio_call_sid == twilio_call_sid
+                        ).first()
+
+                        if call:
+
+                            agent = db.query(Agent).filter(
+                                Agent.id == call.agent_id,
+                                Agent.workspace_id == call.workspace_id
+                            ).first()
+
+                            if agent:
+
+                                pipeline.config.system_prompt = (
+                                    agent.system_prompt
+                                    or AgentConfig.system_prompt
+                                )
+
+                                pipeline.config.llm_model = (
+                                    agent.llm_model
+                                    or AgentConfig.llm_model
+                                )
+
+                                pipeline.config.language = (
+                                    agent.language
+                                    or AgentConfig.language
+                                )
+
+                                pipeline.config.agent_id = agent.id
+
+                                pipeline.config.db = db
+
+                    except Exception as e:
+
+                        logger.error(
+                            "KB pipeline init failed: %s",
+                            e
+                        )
+                    finally:
+
+                        if 'db' in locals():
+
+                            db.close()
 
                     print(
                         "STREAM SID:",
@@ -424,11 +473,11 @@ async def websocket_call(
                             print("WAV FILE WRITTEN:", recording_path)
 
                     if twilio_call_sid:
-                        db = SessionLocal()
+                        recording_db = SessionLocal()
 
                         try:
 
-                            call = db.query(Call).filter(
+                            call = recording_db.query(Call).filter(
                                 Call.twilio_call_sid == twilio_call_sid
                             ).first()
 
@@ -453,14 +502,14 @@ async def websocket_call(
                                     print("UPDATE DATA:", update_data)
 
                                     updated_call = update_call(
-                                        db,
+                                        recording_db,
                                         workspace_id=call.workspace_id,
                                         call_id=call.id,
                                         data=update_data
                                     )
-                                    db.commit()
+                                    recording_db.commit()
 
-                                    db.refresh(updated_call)
+                                    recording_db.refresh(updated_call)
 
                                     print("DB COMMIT SUCCESS")
 
@@ -470,7 +519,7 @@ async def websocket_call(
 
                                     print("CALL UPDATE FAILED:", str(e))
 
-                                    import traceback
+                                    
                                     print(traceback.format_exc())
                             else:
                                 print(
@@ -487,7 +536,7 @@ async def websocket_call(
 
                         finally:
 
-                            db.close()
+                            recording_db.close()
                     else:
                         print(
                             "RECORDING SAVED: no twilio_call_sid; file saved to",

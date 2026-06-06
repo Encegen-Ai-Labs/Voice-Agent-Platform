@@ -167,14 +167,22 @@ def create_knowledge_base_entry(
         filename=upload_file.filename,
         content=extracted_content
     )
+    try:
+        db.add(knowledge_base_entry)
 
-    db.add(knowledge_base_entry)
+        db.commit()
 
-    db.commit()
+        db.refresh(knowledge_base_entry)
 
-    db.refresh(knowledge_base_entry)
-
-    return knowledge_base_entry
+        return knowledge_base_entry
+    except HTTPException:
+        raise   
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to create knowledge base entry"
+        )
 
 
 def get_knowledge_base_entries(
@@ -228,10 +236,18 @@ def delete_knowledge_base_entry(
             detail="Knowledge base entry not found"
         )
 
-    db.delete(knowledge_base_entry)
+    try:
+        db.delete(knowledge_base_entry)
+        db.commit()
 
-    db.commit()
-
-    return {
-        "detail": "Knowledge base entry deleted successfully"
-    }
+        return {
+            "detail": "Knowledge base entry deleted successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to delete knowledge base entry"
+        )

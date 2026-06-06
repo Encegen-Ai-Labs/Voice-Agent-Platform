@@ -24,17 +24,25 @@ def create_api_key(
         key_hash=hashed_key
     )
 
-    db.add(api_key)
-    db.commit()
-    db.refresh(api_key)
+    try:
+        db.add(api_key)
+        db.commit()
+        db.refresh(api_key)
 
-    return {
-        "id": api_key.id,
-        "name": api_key.name,
-        "created_at": api_key.created_at,
-        "api_key": raw_key
-    }
-
+        return {
+            "id": api_key.id,
+            "name": api_key.name,
+            "created_at": api_key.created_at,
+            "api_key": raw_key
+        }
+    except HTTPException:
+        raise       
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to create API key"
+        )
 
 def get_api_keys(
     db: Session,
@@ -63,9 +71,18 @@ def delete_api_key(
             detail="API key not found"
         )
 
-    db.delete(api_key)
-    db.commit()
+    try:
+        db.delete(api_key)
+        db.commit()
 
-    return {
-        "detail": "API key revoked successfully"
-    }
+        return {
+            "detail": "API key revoked successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to revoke API key"
+        )

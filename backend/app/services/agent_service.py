@@ -19,11 +19,27 @@ def create_agent(db: Session, workspace_id: UUID, data):
         is_active=True
     )
 
-    db.add(agent)
-    db.commit()
-    db.refresh(agent)
+    try:
 
-    return agent
+            db.add(agent)
+
+            db.commit()
+
+            db.refresh(agent)
+
+            return agent
+
+    except HTTPException:
+            raise
+
+    except Exception:
+
+            db.rollback()
+
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to create agent"
+            )
 
 
 def get_agents(db: Session, workspace_id: UUID):
@@ -66,10 +82,19 @@ def update_agent(
     for field, value in update_data.items():
         setattr(agent, field, value)
 
-    db.commit()
-    db.refresh(agent)
+    try:
+        db.commit()
+        db.refresh(agent)
 
-    return agent
+        return agent
+    except HTTPException:
+            raise
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to update agent"
+        )
 
 
 def delete_agent(
@@ -97,13 +122,26 @@ def delete_agent(
         number.agent_id = None
 
     # Delete related calls
-    db.query(Call).filter(
-        Call.agent_id == agent_id
-    ).delete()
+    try:
+        db.query(Call).filter(
+           Call.agent_id == agent_id,
+           Call.workspace_id == workspace_id
+           ).delete()
 
-    db.delete(agent)
-    db.commit()
+        db.delete(agent)
+        db.commit()
 
-    return {
-        "message": "Agent deleted successfully"
-    }
+        return {
+            "message": "Agent deleted successfully"
+        }
+    except HTTPException:
+            raise
+
+    except Exception:
+
+            db.rollback()
+
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to delete agent"
+            )
