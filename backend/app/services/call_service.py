@@ -6,7 +6,9 @@ import httpx
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from uuid import UUID
+from datetime import datetime
 
+from app.models import UsageRecord
 from app.models import Call, Agent
 
 
@@ -106,6 +108,45 @@ def get_call(db: Session, workspace_id: UUID, call_id: UUID):
 
     return call
 
+def _update_usage_tracking(
+    db: Session,
+    call: Call
+):
+
+    if not call.duration:
+        return
+
+    now = datetime.utcnow()
+
+    month = now.month
+    year = now.year
+
+    duration_minutes = round(call.duration / 60, 2)
+
+    usage_record = db.query(
+        UsageRecord
+    ).filter(
+        UsageRecord.workspace_id == call.workspace_id,
+        UsageRecord.month == month,
+        UsageRecord.year == year
+    ).first()
+
+    if usage_record:
+
+        usage_record.total_minutes += duration_minutes
+
+    else:
+
+        usage_record = UsageRecord(
+            workspace_id=call.workspace_id,
+            month=month,
+            year=year,
+            total_minutes=duration_minutes
+        )
+
+        db.add(usage_record)
+
+    db.commit()
 
 def update_call(db: Session, workspace_id: UUID, call_id: UUID, data):
 
@@ -129,6 +170,12 @@ def update_call(db: Session, workspace_id: UUID, call_id: UUID, data):
     )
 
     if should_trigger_webhook:
+        if call.status == "completed":
+
+            _update_usage_tracking(
+                db,
+                call
+            )
         _trigger_webhook_background(call)
 
     return call

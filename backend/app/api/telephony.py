@@ -97,7 +97,7 @@ async def test_call():
     call = client.calls.create(
         to="+917058326485",
         from_=TWILIO_PHONE_NUMBER,
-        url=f"https://bacon-father-algebra-shuttle.trycloudflare.com/twilio/incoming-call?call_id={str(call_record.id)}" #this should be your ngrok or cloudflare url pointing to the /twilio/incoming-call endpoint
+        url=f"https://dawn-hydrocodone-trek-cellular.trycloudflare.com/twilio/incoming-call?call_id={str(call_record.id)}" #this should be your ngrok or cloudflare url pointing to the /twilio/incoming-call endpoint
     )
 
     call_record.twilio_call_sid = call.sid
