@@ -35,6 +35,8 @@ class Call(Base):
 
     direction: Mapped[str | None] = mapped_column(String)
 
+    twilio_call_sid: Mapped[str | None] = mapped_column(String, unique=True)
+
     start_time: Mapped[datetime] = mapped_column(
         DateTime,
         default=lambda: datetime.now(timezone.utc)

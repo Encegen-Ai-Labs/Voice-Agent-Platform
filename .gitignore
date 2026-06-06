@@ -35,3 +35,8 @@ test_output.*
 *.m4a
 
 .claude/
+graphify-out/
+scripts/
+mcp.json
+webhook_test.py
+ws_test_client.py
