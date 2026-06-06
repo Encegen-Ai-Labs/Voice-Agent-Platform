@@ -1,34 +1,24 @@
-import audioop
 import asyncio
-import json
+import audioop
 import base64
+import json
 import logging
-import traceback
+import os
 import time
-from datetime import datetime, timezone
+import traceback
+import wave
+from datetime import datetime
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+
+from app.core.pipeline import AgentConfig, VoicePipeline
+from app.core.realtime_stt import RealtimeSTTClient
+from app.database import SessionLocal
+from app.models.agent import Agent
+from app.models.call import Call
+from app.models.knowledge_base import KnowledgeBase
 from app.schemas.call import CallUpdate
 from app.services.call_service import update_call
-
-from fastapi import (
-    APIRouter,
-    WebSocket,
-    WebSocketDisconnect
-)
-
-from app.core.pipeline import (
-    VoicePipeline,
-    AgentConfig
-)
-
-import os
-import wave
-
-from uuid import UUID
-
-from app.database import SessionLocal
-from app.models.call import Call
-
-from app.models.agent import Agent
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -36,533 +26,430 @@ logger.setLevel(logging.DEBUG)
 router = APIRouter(tags=["WebSocket"])
 
 
-
-# Twilio sends mulaw at 8000 Hz, 1 byte per sample
-_MULAW_SAMPLE_RATE = 8000
-
-_MIN_AUDIO_SECONDS = 0.5
-_SPEECH_ENERGY_THRESHOLD = 100
-_SILENCE_CHUNKS = 8
+_CHUNK_SIZE = 160
 
 
 @router.websocket("/ws/call")
-async def websocket_call(
-    websocket: WebSocket
-):
-
+async def websocket_call(websocket: WebSocket):
     await websocket.accept()
 
-    call_id = websocket.query_params.get(
-        "call_id"
-    )
+    call_id: str | None = websocket.query_params.get("call_id")
+    logger.info("[WS] Accepted call_id=%s", call_id)
 
-    pipeline = VoicePipeline(
-    AgentConfig()
-    )    
-    twilio_call_sid = None
 
-    print("WEBSOCKET CALL_ID:", call_id)
-    logger.info("WebSocket call_id=%s", call_id)
+    pipeline = VoicePipeline(AgentConfig())
+    realtime_stt: RealtimeSTTClient | None = None
 
-    audio_buffer = bytearray()
+    stream_sid: str | None = None
+    twilio_call_sid: str | None = None
+    full_recording: bytearray = bytearray()       
+    outbound_recording: bytearray = bytearray()   
+    conversation_history: list[dict] = []
 
-    full_recording = bytearray()
+    ai_speaking: bool = False
+    interrupt_event: asyncio.Event = asyncio.Event()
+    response_task: asyncio.Task | None = None
+    last_processed_transcript: str = ""
+    pending_transcript: str | None = None  
 
-    conversation_history = []
+    _DISCONNECTED = object()  
 
-    stream_sid = None
 
-    ai_speaking = False
+    async def _cancel_response_task() -> None:
+        """Cancel and await the current response task if any."""
+        nonlocal response_task, ai_speaking
+        task = response_task
+        if task is None or task.done():
+            return
+        task.cancel()
+        try:
+            await asyncio.wait_for(asyncio.shield(task), timeout=1.5)
+        except (asyncio.CancelledError, asyncio.TimeoutError):
+            pass
+        response_task = None
+        ai_speaking = False
 
-    _DISCONNECTED = object()
+  
+    async def on_realtime_transcript(transcript: str, event_type: str) -> None:
+        nonlocal ai_speaking, interrupt_event, response_task
+        nonlocal conversation_history, last_processed_transcript, stream_sid
+        nonlocal pending_transcript
 
-    async def next_media_chunk():
-        nonlocal stream_sid
+        transcript = transcript.strip()
+        if not transcript:
+            return
 
-        while True:
+        print(f"[STT CALLBACK] [{event_type}] {transcript!r} | ai_speaking={ai_speaking} | stream_sid={stream_sid}")
+        logger.info("[STT] [%s] %r", event_type, transcript)
+
+        # ---- Interruption: user spoke while AI is talking ----
+        if ai_speaking and event_type not in ("EndOfTurn", "EagerEndOfTurn"):
+            print("[WS] Barge-in detected — cancelling response task")
+            logger.info("[WS] Barge-in detected — cancelling response task")
+            await _cancel_response_task()
+            interrupt_event.set()
+            if stream_sid:
+                try:
+                    await websocket.send_json({
+                        "event": "clear",
+                        "streamSid": stream_sid,
+                    })
+                except Exception as exc:
+                    logger.warning("[WS] Twilio clear failed: %s", exc)
+
+        if event_type not in ("EndOfTurn", "EagerEndOfTurn"):
+            return
+
+        if transcript == last_processed_transcript:
+            print(f"[STT CALLBACK] Duplicate transcript, skipping: {transcript!r}")
+            return
+
+        if response_task and not response_task.done():
+            print(f"[WS] Response running — queuing turn: {transcript!r}")
+            logger.info("[WS] Response running — queuing turn: %r", transcript)
+            pending_transcript = transcript
+            return
+
+        last_processed_transcript = transcript
+        interrupt_event.clear()
+        history_snapshot = list(conversation_history)
+
+        print(f"[WS] Launching response task for: {transcript!r}")
+
+        async def run_response(turn_transcript: str, turn_history: list) -> None:
+            nonlocal ai_speaking, conversation_history, response_task
+            nonlocal pending_transcript, last_processed_transcript
+
+            ai_speaking = True
+            assistant_parts: list[str] = []
+            was_interrupted = False
 
             try:
+                print(f"[WS] run_response START: {turn_transcript!r} | stream_sid={stream_sid}")
+                logger.info("[WS] run_response START: %r", turn_transcript)
+                t0 = time.time()
 
-                message = await websocket.receive_text()
+                async for sentence, audio in pipeline.stream_audio_sentences(
+                    turn_transcript, turn_history
+                ):
+                    if interrupt_event.is_set():
+                        logger.info("[WS] Interrupt flag set — stopping audio")
+                        was_interrupted = True
+                        break
 
-            except (
-                WebSocketDisconnect,
-                RuntimeError
-            ):
+                    assistant_parts.append(sentence)
 
-                logger.info(
-                    "WebSocket disconnected"
-                )
+                    for i in range(0, len(audio), _CHUNK_SIZE):
+                        if interrupt_event.is_set():
+                            was_interrupted = True
+                            break
 
+                        chunk = audio[i : i + _CHUNK_SIZE]
+                        # Record AI audio for the combined recording
+                        outbound_recording.extend(chunk)
+                        try:
+                            await websocket.send_json({
+                                "event": "media",
+                                "streamSid": stream_sid,
+                                "media": {
+                                    "payload": base64.b64encode(chunk).decode()
+                                },
+                            })
+                        except Exception as exc:
+                            logger.error("[WS] Twilio send failed: %s", exc)
+                            return
+
+                        await asyncio.sleep(0)
+
+                    if was_interrupted:
+                        break
+
+                if not was_interrupted and assistant_parts:
+                    full_response = " ".join(assistant_parts)
+                    pipeline.last_transcript = turn_transcript
+                    pipeline.last_response = full_response
+
+                    conversation_history.append({"role": "user", "content": turn_transcript})
+                    conversation_history.append({"role": "assistant", "content": full_response})
+                    conversation_history = conversation_history[-6:]
+                    logger.info(
+                        "[WS] History updated (%d msgs). Last response: %r",
+                        len(conversation_history),
+                        full_response,
+                    )
+
+                logger.info("[WS] run_response END (%.2fs)", time.time() - t0)
+
+            except asyncio.CancelledError:
+                logger.info("[WS] run_response CANCELLED")
+                raise
+
+            except Exception as exc:
+                logger.error("[WS] run_response error: %s\n%s", exc, traceback.format_exc())
+
+            finally:
+                ai_speaking = False
+                # Process any queued turn immediately after this one finishes
+                queued = pending_transcript
+                if queued and queued != last_processed_transcript:
+                    pending_transcript = None
+                    last_processed_transcript = queued
+                    interrupt_event.clear()
+                    queued_history = list(conversation_history)
+                    logger.info("[WS] Processing queued turn: %r", queued)
+                    response_task = asyncio.create_task(
+                        run_response(queued, queued_history),
+                        name="response-queued",
+                    )
+                else:
+                    pending_transcript = None
+
+        logger.info("[WS] Launching response task for: %r", transcript)
+        response_task = asyncio.create_task(
+            run_response(transcript, history_snapshot),
+            name="response",
+        )
+
+    try:
+        realtime_stt = RealtimeSTTClient(on_transcript=on_realtime_transcript)
+        await realtime_stt.connect()
+        logger.info("[WS] Realtime STT connected")
+    except Exception as exc:
+        logger.error("[WS] Realtime STT init failed: %s", exc)
+
+    
+    async def next_media_chunk() -> bytes | object:
+       
+        nonlocal stream_sid, twilio_call_sid
+
+        while True:
+            try:
+                raw = await websocket.receive_text()
+            except (WebSocketDisconnect, RuntimeError):
+                logger.info("[WS] WebSocket disconnected")
                 return _DISCONNECTED
 
-            data = json.loads(message)
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                logger.warning("[WS] Non-JSON message received")
+                continue
 
             event = data.get("event")
 
             if event == "media":
+                audio_chunk = base64.b64decode(data["media"]["payload"])
+                full_recording.extend(audio_chunk)
 
-                return base64.b64decode(
-                    data["media"]["payload"]
-                )
-
-            elif event in (
-                "connected",
-                "start",
-                "stop"
-            ):
-                if event == "start":
-
-                    stream_sid = data.get(
-                        "streamSid"
-                    )
-
-                    print("FULL START EVENT DATA:", data)
-                    logger.info("Full start event: %s", data)
-
-                    nonlocal twilio_call_sid
-                    twilio_call_sid = data.get(
-                        "callSid"
-                    )
-                    if not twilio_call_sid:
-                        start_data = data.get("start", {})
-                        twilio_call_sid = start_data.get("callSid")
-                        print("EXTRACTED FROM START SUBOBJECT:", twilio_call_sid)
+                if realtime_stt:
                     try:
+                        await realtime_stt.send_audio(audio_chunk)
+                    except Exception as exc:
+                        logger.error("[WS] STT send error: %s", exc)
 
-                        db = SessionLocal()
+                return audio_chunk
 
-                        call = db.query(Call).filter(
-                            Call.twilio_call_sid == twilio_call_sid
-                        ).first()
-
-                        if call:
-
-                            agent = db.query(Agent).filter(
-                                Agent.id == call.agent_id,
-                                Agent.workspace_id == call.workspace_id
-                            ).first()
-
-                            if agent:
-
-                                pipeline.config.system_prompt = (
-                                    agent.system_prompt
-                                    or AgentConfig.system_prompt
-                                )
-
-                                pipeline.config.llm_model = (
-                                    agent.llm_model
-                                    or AgentConfig.llm_model
-                                )
-
-                                pipeline.config.language = (
-                                    agent.language
-                                    or AgentConfig.language
-                                )
-
-                                pipeline.config.agent_id = agent.id
-
-                                pipeline.config.db = db
-
-                    except Exception as e:
-
-                        logger.error(
-                            "KB pipeline init failed: %s",
-                            e
-                        )
-                    finally:
-
-                        if 'db' in locals():
-
-                            db.close()
-
-                    print(
-                        "STREAM SID:",
-                        stream_sid
-                    )
-
-                    print(
-                        "TWILIO CALL SID:",
-                        twilio_call_sid
-                    )
-
-                print(
-                    f"TWILIO EVENT: {event} at {time.time()}"
+            elif event == "start":
+                start_data = data.get("start", {})
+                stream_sid = data.get("streamSid") or start_data.get("streamSid")
+                twilio_call_sid = (
+                    data.get("callSid")
+                    or start_data.get("callSid")
                 )
-
                 logger.info(
-                    "Twilio event: %s",
-                    event
+                    "[WS] Stream started sid=%s call_sid=%s",
+                    stream_sid,
+                    twilio_call_sid,
                 )
+                _load_agent_config(twilio_call_sid, pipeline)
 
-                if event == "stop":
+            elif event == "stop":
+                logger.info("[WS] Twilio stop event")
+                return _DISCONNECTED
 
-                    return _DISCONNECTED
+            return None  
 
-                return None
-
+  
     try:
-
-        silence_count = 0
-
         while True:
-
             chunk = await next_media_chunk()
-
             if chunk is _DISCONNECTED:
-
-                print(
-                    f"DISCONNECTED at {time.time()}"
-                )
-                print("SAVING RECORDING...")
-                print("RECORDING BYTES:", len(full_recording))
-
                 break
 
-            if chunk is None:
+    except Exception as exc:
+        logger.error("[WS] Fatal error: %s\n%s", exc, traceback.format_exc())
 
-                continue
-            full_recording.extend(chunk)
-            if ai_speaking:
+    finally:
+        await _cancel_response_task()
 
-                continue
+        if realtime_stt:
+            await realtime_stt.close()
 
-            
-            pcm_chunk = audioop.ulaw2lin(
-                chunk,
-                2
-            )
+        _save_recording(full_recording, outbound_recording, twilio_call_sid)
 
-            energy = audioop.rms(
-                pcm_chunk,
-                2
-            )
+
+def _load_agent_config(twilio_call_sid: str | None, pipeline: VoicePipeline) -> None:
+    
+    if not twilio_call_sid:
+        return
+
+    db = SessionLocal()
+    try:
+        call = db.query(Call).filter(
+            Call.twilio_call_sid == twilio_call_sid
+        ).first()
+
+        if not call:
+            logger.warning("[WS] No call found for sid=%s", twilio_call_sid)
+            return
+
+        agent = db.query(Agent).filter(
+            Agent.id == call.agent_id,
+            Agent.workspace_id == call.workspace_id,
+        ).first()
+
+        if not agent:
+            logger.warning("[WS] No agent found for call %s", call.id)
+            return
+
+        pipeline.config.system_prompt = (
+            agent.system_prompt or AgentConfig.system_prompt
+        )
+        pipeline.config.llm_model = agent.llm_model or AgentConfig.llm_model
+        pipeline.config.language = agent.language or AgentConfig.language
+        pipeline.config.agent_id = agent.id
+
+        entries = (
+            db.query(KnowledgeBase)
+            .filter(KnowledgeBase.agent_id == agent.id)
+            .order_by(KnowledgeBase.created_at.desc())
+            .limit(3)
+            .all()
+        )
+        pipeline.config.knowledge_context = "\n".join(
+            e.content for e in entries if e.content
+        )
+
+        logger.info(
+            "[WS] Agent config loaded: agent_id=%s model=%s lang=%s kb_entries=%d",
+            agent.id,
+            pipeline.config.llm_model,
+            pipeline.config.language,
+            len(entries),
+        )
+
+    except Exception as exc:
+        logger.error("[WS] Agent config load failed: %s", exc)
+    finally:
+        db.close()
+
+
+def _save_recording(
+    inbound: bytearray,
+    outbound: bytearray,
+    twilio_call_sid: str | None,
+) -> None:
+ 
+    if not inbound and not outbound:
+        logger.warning("[RECORDING] No audio captured — skipping save")
+        return
+
+    filename: str = (
+        f"{twilio_call_sid}.wav"
+        if twilio_call_sid
+        else f"unknown_{int(time.time())}.wav"
+    )
+
+    try:
+        recordings_dir = os.path.abspath("recordings")
+        os.makedirs(recordings_dir, exist_ok=True)
+        recording_path = os.path.join(recordings_dir, filename)
 
         
-            if energy > _SPEECH_ENERGY_THRESHOLD:
-
-                audio_buffer.extend(chunk)
-
-                silence_count = 0
-
-                logger.debug(
-                    "Speech: energy=%d buffer=%d bytes",
-                    energy,
-                    len(audio_buffer)
-                )
-
-            elif len(audio_buffer) > 0:
-
-                silence_count += 1
-
-                logger.debug(
-                    "Silence %d/%d: energy=%d",
-                    silence_count,
-                    _SILENCE_CHUNKS,
-                    energy
-                )
-
-                if silence_count >= _SILENCE_CHUNKS:
-
-                    logger.info(
-                        "Silence detected, buffer=%d bytes",
-                        len(audio_buffer)
-                    )
-
-                    min_bytes = int(
-                        _MIN_AUDIO_SECONDS *
-                        _MULAW_SAMPLE_RATE
-                    )
-
-                    if len(audio_buffer) >= min_bytes:
-       
-                        try:
-
-                            logger.info(
-                                "Processing utterance, %d bytes",
-                                len(audio_buffer)
-                            )
-                            print("BUFFER SIZE:", len(audio_buffer))
-
-                            print(
-                                f"PIPELINE START: {time.time()}"
-                            )
-
-                            start = time.time()
-
-                            async def run_pipeline():
-
-                                return await pipeline.process_audio(
-                                    bytes(audio_buffer),
-                                    conversation_history
-                                )
-
-                            pipeline_task = asyncio.create_task(
-                                run_pipeline()
-                            )
-
-                            
-
-                            response_audio = await pipeline_task
-
-                            if response_audio is None:
-
-                                audio_buffer.clear()
-
-                                silence_count = 0
-
-                                continue
-
-                           
-                            ai_speaking = True
-
-                            try:
-
-                                chunk_size = 1600
-
-                                for i in range(
-                                    0,
-                                    len(response_audio),
-                                    chunk_size
-                                ):
-
-                                    chunk = response_audio[
-                                        i:i + chunk_size
-                                    ]
-
-                                    await websocket.send_json({
-                                        "event": "media",
-                                        "streamSid": stream_sid,
-                                        "media": {
-                                            "payload": base64.b64encode(
-                                                chunk
-                                            ).decode("utf-8")
-                                        }
-                                    })
-
-                                    await asyncio.sleep(0.02)
-
-                                full_recording.extend(response_audio)
-                                print(
-                                    "APPENDED AI RESPONSE TO RECORDING:",
-                                    len(response_audio),
-                                    "bytes"
-                                )
-
-                            finally:
-
-                                await asyncio.sleep(0.5)
-
-                                ai_speaking = False
-
-                            if (
-                                pipeline.last_transcript
-                                and
-                                pipeline.last_response
-                            ):
-
-                                conversation_history.append({
-                                    "role": "user",
-                                    "content": pipeline.last_transcript
-                                })
-
-                                conversation_history.append({
-                                    "role": "assistant",
-                                    "content": pipeline.last_response
-                                })
-
-                                conversation_history = (
-                                    conversation_history[-6:]
-                                )
-
-                            if response_audio is None:
-
-                                audio_buffer.clear()
-
-                                silence_count = 0
-
-                                continue
-
-                            elapsed = (
-                                time.time() - start
-                            )
-
-                            print(
-                                f"PIPELINE END: took {elapsed:.2f} seconds"
-                            )
-
-                            logger.info(
-                                "Pipeline took %.2f seconds, response audio: %d bytes",
-                                elapsed,
-                                len(response_audio)
-                            )
-
-
-                        except Exception as e:
-
-                            logger.error(
-                                "Pipeline error: %s\n%s",
-                                e,
-                                traceback.format_exc()
-                            )
-
-                    else:
-
-                        logger.info(
-                            "Buffer too short (%d bytes), discarding",
-                            len(audio_buffer)
-                        )
-
-                    audio_buffer.clear()
-
-                    silence_count = 0
-            
-        if full_recording:
-
-            try:
-
-                    cwd = os.getcwd()
-                    print("SAVE RECORDING: twilio_call_sid=", twilio_call_sid)
-                    print("SAVE RECORDING: recording bytes=", len(full_recording))
-                    print("SAVE RECORDING: cwd=", cwd)
-                    logger.info(
-                        "Saving recording for twilio_call_sid=%s len=%d cwd=%s",
-                        twilio_call_sid,
-                        len(full_recording),
-                        cwd,
-                    )
-
-                    recordings_dir = os.path.abspath(
-                        "recordings"
-                    )
-
-                    os.makedirs(
-                        recordings_dir,
-                        exist_ok=True
-                    )
-
-                    recording_name = (
-                        f"{twilio_call_sid}.wav"
-                        if twilio_call_sid
-                        else f"unknown_{int(time.time())}.wav"
-                    )
-
-                    recording_path = os.path.join(
-                        recordings_dir,
-                        recording_name
-                    )
-
-                    with wave.open(
-                        recording_path,
-                        "wb"
-                        ) as wav_file:
-
-                            pcm_audio = audioop.ulaw2lin(
-                                bytes(full_recording),
-                                2
-                            )
-                            wav_file.setnchannels(1)
-                            wav_file.setsampwidth(2)
-
-                            wav_file.setframerate(8000)
-
-                            wav_file.writeframes(
-                                pcm_audio
-                            )
-
-                            print("WAV FILE WRITTEN:", recording_path)
-
-                    if twilio_call_sid:
-                        recording_db = SessionLocal()
-
-                        try:
-
-                            call = recording_db.query(Call).filter(
-                                Call.twilio_call_sid == twilio_call_sid
-                            ).first()
-
-                            if call:
-                                try:
-
-                                    end_time = datetime.utcnow()
-
-                                    duration = int(
-                                        (
-                                            end_time - call.start_time
-                                        ).total_seconds()
-                                    )
-
-                                    update_data = CallUpdate(
-                                        status="completed",
-                                        recording_url=recording_path,
-                                        end_time=end_time,
-                                        duration=duration
-                                    )
-
-                                    print("UPDATE DATA:", update_data)
-
-                                    updated_call = update_call(
-                                        recording_db,
-                                        workspace_id=call.workspace_id,
-                                        call_id=call.id,
-                                        data=update_data
-                                    )
-                                    recording_db.commit()
-
-                                    recording_db.refresh(updated_call)
-
-                                    print("DB COMMIT SUCCESS")
-
-                                    print("UPDATED CALL:", updated_call)
-
-                                except Exception as e:
-
-                                    print("CALL UPDATE FAILED:", str(e))
-
-                                    
-                                    print(traceback.format_exc())
-                            else:
-                                print(
-                                    "RECORDING SAVED: no call found for twilio_call_sid=",
-                                    twilio_call_sid,
-                                    "; file saved to",
-                                    recording_path,
-                                )
-                                logger.warning(
-                                    "Recording saved but no call found for twilio_call_sid=%s to %s",
-                                    twilio_call_sid,
-                                    recording_path,
-                                )
-
-                        finally:
-
-                            recording_db.close()
-                    else:
-                        print(
-                            "RECORDING SAVED: no twilio_call_sid; file saved to",
-                            recording_path,
-                        )
-                        logger.warning(
-                            "Recording saved without twilio_call_sid to %s",
-                            recording_path,
-                        )
-
-            except Exception as e:
-                print("RECORDING SAVE ERROR:", str(e))
-                print(traceback.format_exc())
-                logger.error(
-                    "Recording save failed: %s",
-                    e
-                )
-        else:
-            print("RECORDING NOT SAVED: no recording bytes")
-            logger.warning(
-                "Recording not saved because full_recording is empty"
-            )
-    except Exception as e:
-
-        logger.error(
-            "Websocket fatal error: %s\n%s",
-            e,
-            traceback.format_exc()
+        inbound_pcm = audioop.ulaw2lin(bytes(inbound), 2) if inbound else b""
+        outbound_pcm = audioop.ulaw2lin(bytes(outbound), 2) if outbound else b""
+
+        inbound_samples = len(inbound_pcm) // 2
+        outbound_samples = len(outbound_pcm) // 2
+        max_samples = max(inbound_samples, outbound_samples)
+
+        if inbound_samples < max_samples:
+            inbound_pcm += b"\x00\x00" * (max_samples - inbound_samples)
+        if outbound_samples < max_samples:
+            outbound_pcm += b"\x00\x00" * (max_samples - outbound_samples)
+
+        import struct
+        stereo_frames = bytearray()
+        for i in range(0, max_samples * 2, 2):
+            stereo_frames += inbound_pcm[i:i+2]   # left (user)
+            stereo_frames += outbound_pcm[i:i+2]  # right (AI)
+
+        with wave.open(recording_path, "wb") as wav_file:
+            wav_file.setnchannels(2)       # stereo
+            wav_file.setsampwidth(2)       # 16-bit
+            wav_file.setframerate(8000)    # 8kHz
+            wav_file.writeframes(bytes(stereo_frames))
+
+        duration_s = max_samples / 8000
+        logger.info("=" * 60)
+        logger.info("[RECORDING] Stereo WAV saved (L=user, R=AI)")
+        logger.info("[RECORDING] Filename : %s", filename)
+        logger.info("[RECORDING] Path     : %s", recording_path)
+        logger.info("[RECORDING] Duration : %.1fs", duration_s)
+        logger.info("[RECORDING] Inbound  : %d bytes", len(inbound))
+        logger.info("[RECORDING] Outbound : %d bytes", len(outbound))
+        logger.info("=" * 60)
+        print(f"\n{'='*60}")
+        print(f"[RECORDING] File: {recording_path}")
+        print(f"[RECORDING] Duration: {duration_s:.1f}s  |  inbound={len(inbound)}B  outbound={len(outbound)}B")
+        print(f"{'='*60}\n")
+
+    except Exception as exc:
+        logger.error("[RECORDING] Write failed: %s\n%s", exc, traceback.format_exc())
+        print(f"[RECORDING] FAILED: {exc}")
+        return
+
+    if not twilio_call_sid:
+        return
+
+    db = SessionLocal()
+    try:
+        call = db.query(Call).filter(
+            Call.twilio_call_sid == twilio_call_sid
+        ).first()
+
+        if not call:
+            logger.warning("[RECORDING] No DB call for sid=%s", twilio_call_sid)
+            return
+
+        end_time = datetime.utcnow()
+        duration = max(
+            0,
+            int((end_time - call.start_time).total_seconds())
+            if call.start_time
+            else 0,
         )
+
+        updated = update_call(
+            db,
+            workspace_id=call.workspace_id,
+            call_id=call.id,
+            data=CallUpdate(
+                status="completed",
+                recording_url=recording_path,
+                end_time=end_time,
+                duration=duration,
+            ),
+        )
+        db.commit()
+        db.refresh(updated)
+        logger.info(
+            "[WS] Call complete — sid=%s | duration=%ds | recording=%s",
+            twilio_call_sid, duration, filename,
+        )
+        print(f"[WS] Call complete — duration={duration}s — {filename}")
+
+    except Exception as exc:
+        logger.error("[WS] Call record update failed: %s\n%s", exc, traceback.format_exc())
+    finally:
+        db.close()
