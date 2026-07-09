@@ -11,7 +11,8 @@ from app.api import workspaces
 from app.api import phone_numbers
 from app.api import api_keys
 from app.api import knowledge_base
-
+from app.api import web_voice
+from app.api import voice
 
 from app.core.rate_limit import limiter
 from slowapi.errors import RateLimitExceeded
@@ -26,8 +27,6 @@ from fastapi.exceptions import RequestValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
 logger = logging.getLogger(__name__)
-from app.api import analytics
-
 
 app = FastAPI(
     title="Voice-Agent-Platform",
@@ -113,12 +112,16 @@ app.include_router(workspaces.router)
 app.include_router(phone_numbers.router)
 app.include_router(api_keys.router)
 app.include_router(knowledge_base.router)
-app.include_router(analytics.router)
-
+app.include_router(web_voice.router)
+app.include_router(voice.router)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # React dev server
+     allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:5174",
+    ],
+
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -9,6 +9,7 @@ load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./voiceforge.db")
 
 
+
 def get_db():
     db: Session = SessionLocal()
     try:
@@ -20,7 +21,9 @@ class Base(DeclarativeBase):
 
 
 engine = create_engine(
-    DATABASE_URL
+    DATABASE_URL,
+    pool_pre_ping=True,      # Line 1: Tests the connection before executing a query
+    pool_recycle=1800,
 )
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
