@@ -8,6 +8,8 @@ from twilio.rest import Client
 from twilio.twiml.voice_response import VoiceResponse
 
 from app.core.security import get_current_user
+from app.core.realtime_stt import RealtimeSTTClient
+from app.core.call_prewarm import start_prewarm
 from app.database import get_db
 from app.models.phone_number import PhoneNumber
 from app.schemas.call import CallCreate
@@ -50,6 +52,17 @@ async def incoming_call(request: Request) -> Response:
         call_id = request.query_params.get("call_id")
         logger.info("[Telephony] Incoming call call_id=%s", call_id)
 
+        # Start connecting + warming Deepgram NOW, in the background, while
+        # Twilio is about to speak the <Say> greeting. Previously this only
+        # started once the Media Stream WebSocket connected — which Twilio
+        # only does AFTER <Say> finishes — costing 2+ seconds of dead air
+        # where the caller could be talking into a stream that wasn't
+        # listening yet. This closes that gap. If the call never reaches
+        # /ws/call (no answer, voicemail, etc.), call_prewarm's TTL cleanup
+        # closes the connection automatically so nothing leaks.
+        if call_id:
+            await start_prewarm(call_id, RealtimeSTTClient)
+
         host = (
             _PUBLIC_BASE_URL
             .removeprefix("https://")
@@ -59,12 +72,18 @@ async def incoming_call(request: Request) -> Response:
 
         response = VoiceResponse()
         response.say(
-            "Hello, I am your AI assistant. How can I help you today?"
+            "Hello, I am your AI assistant"
+            "Please tell me how I can help you today."
         )
-        response.pause(length=1)
 
         connect = response.connect()
-        connect.stream(url=websocket_url, track="inbound_track")
+        stream = connect.stream(url=websocket_url, track="inbound_track")
+        # Twilio Media Streams does not reliably forward query string
+        # parameters on the wss:// URL itself through to the WebSocket
+        # connection. The supported, reliable way to pass custom data is
+        # via <Parameter> child elements, which Twilio delivers in the
+        # "start" event payload as start.customParameters.call_id.
+        stream.parameter(name="call_id", value=str(call_id))
 
         twiml = str(response)
         logger.info("[Telephony] TwiML generated for call_id=%s", call_id)

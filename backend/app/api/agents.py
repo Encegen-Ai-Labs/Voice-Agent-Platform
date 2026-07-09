@@ -12,6 +12,7 @@ from app.services.agent_service import (
     update_agent,
     delete_agent
 )
+from app.services.cartesia_service import CartesiaService
 
 router = APIRouter(prefix="/agents", tags=["Agents"])
 
@@ -31,7 +32,12 @@ def list_agents(
     current_user=Depends(get_current_user)
 ):
     return get_agents(db, current_user["workspace_id"])
+@router.get("/voices")
+async def get_cartesia_voices():
 
+    voices = await CartesiaService.get_voices()
+
+    return voices
 
 @router.get("/{agent_id}", response_model=AgentResponse)
 def get_agent_endpoint(
@@ -59,3 +65,4 @@ def delete_agent_endpoint(
     current_user=Depends(get_current_user)
 ):
     return delete_agent(db, current_user["workspace_id"], agent_id)
+

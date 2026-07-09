@@ -1,3 +1,4 @@
+import VoiceTest from "@/pages/VoiceTest";
 import {
   LayoutDashboard,
   Users,
@@ -7,7 +8,12 @@ import {
   Bot,
   BotMessageSquare,
   BotOff,
-  BotMessageSquareIcon
+  BotMessageSquareIcon,
+  TestTube,
+  VoteIcon,
+  Mic,
+  Radio,
+  AudioWaveform
 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 
@@ -20,6 +26,7 @@ export default function Sidebar({ collapsed, setCollapsed }) {
     { name: "Calls", path: "/calls", icon: Phone },
     { name: "Analytics", path: "/analytics", icon: BarChart3 },
     { name: "Settings", path: "/settings", icon: SettingsIcon },
+    { name: "Voice Testing", path: "/voice-test", icon: AudioWaveform},
   ];
 
   return (
