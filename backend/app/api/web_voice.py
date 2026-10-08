@@ -3,6 +3,7 @@ import asyncio
 import json
 import base64
 import time
+from uuid import UUID
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, Query, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
@@ -13,7 +14,7 @@ from app.services.agent_service import get_agent
 from app.core.browser_stt import BrowserSTTClient
 from app.core.pipeline import VoicePipeline, AgentConfig
 from app.models.agent import Agent
-from app.models.knowledge_base import KnowledgeBase  # 🌟 ADD THIS
+from app.models.knowledge_base import KnowledgeBase
 
 
 logger = logging.getLogger(__name__)
@@ -23,6 +24,14 @@ router = APIRouter(prefix="/api/voice-test", tags=["Voice Test"])
 
 # In-memory session store mapping tokens to active parameters
 voice_test_sessions = {}
+
+@router.get("/groq-models")
+async def list_groq_models():
+    import os, httpx
+    groq_key = os.getenv("GROQ_API_KEY")
+    async with httpx.AsyncClient() as client:
+        r = await client.get("https://api.groq.com/openai/v1/models", headers={"Authorization": f"Bearer {groq_key}"})
+        return r.json()
 
 @router.post("/session")
 async def create_voice_test_session(
@@ -34,11 +43,20 @@ async def create_voice_test_session(
     Validates workspace access for the chosen agent and returns a short-lived token.
     """
     workspace_id = current_user["workspace_id"]
-    agent_id = payload.get("agent_id")
+    agent_id_raw = payload.get("agent_id")
     
-    if not agent_id:
+    if not agent_id_raw:
         return JSONResponse(
             content={"error": "Missing agent_id"}, 
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
+        
+    try:
+        workspace_id = UUID(str(workspace_id))
+        agent_id = UUID(str(agent_id_raw))
+    except ValueError:
+        return JSONResponse(
+            content={"error": "Invalid ID format"}, 
             status_code=status.HTTP_400_BAD_REQUEST
         )
         
@@ -105,9 +123,18 @@ async def browser_voice_ws(
     # Initialize pipeline with configuration extracted from DB
     selected_model = agent.llm_model
 
-    # Hot-swap old deprecated versatile string seamlessly
-    if selected_model == "llama-3.1-8b-versatile":
-        selected_model = "llama-3.3-70b-versatile"
+    # Hot-swap deprecated/enterprise-only models to active Groq models
+    DEPRECATED_MODELS = [
+        "llama-3.1-8b-versatile",
+        "llama-3.1-70b-versatile",
+        "llama-3.3-70b-versatile",
+        "llama-3.1-8b-instant",
+        "openai/gpt-oss-20b",
+        "openai/gpt-oss-120b",
+        "grok-voice-think-fast-2.0",
+    ]
+    if selected_model in DEPRECATED_MODELS or not selected_model:
+        selected_model = "allam-2-7b"
 
     # 🌟 FETCH KNOWLEDGE BASE DOCUMENTS
     kb_entries = (
@@ -184,9 +211,6 @@ async def browser_voice_ws(
 
         # 1. Drop duplicate stream updates immediately
         if event_type == "Update":
-            if transcript == last_processed_sentence:
-                return
-            last_processed_sentence = transcript
             return  # Partial updates should never spin up pipelines
 
         logger.info("[WebVoice STT] [%s] %r", event_type, transcript)
@@ -208,8 +232,6 @@ async def browser_voice_ws(
         # 3. Only process definitive turn signals
         if event_type in ("EndOfTurn", "EagerEndOfTurn"):
             await websocket.send_json({"type": "user_transcript", "text": transcript})
-            
-            last_update_transcript = ""
         else:
             return
 
@@ -225,7 +247,7 @@ async def browser_voice_ws(
             logger.info("[WebVoice WS] Dropped trailing microphone acoustic bleed turn.")
             return
 
-        # If the text is identical and arrived within 1.5 seconds of the last turn, bypass
+        # If the text is identical and arrived within 1.5 seconds of the last PROCESSED turn, bypass
         if transcript == last_processed_sentence and time_elapsed < 1.5:
             logger.info("[WebVoice WS] Dropped trailing duplicate %s signal safely.", event_type)
             return
@@ -233,6 +255,8 @@ async def browser_voice_ws(
         # Lock this phrase and timestamp immediately
         last_processed_sentence = transcript
         last_processed_time = now
+
+        logger.info("[WebVoice WS] Launching pipeline for: %r with model: %s", transcript, agent_config.llm_model)
 
         # 5. Clean up genuine historical tasks from a previous, older conversation turn
         if response_task and not response_task.done():
