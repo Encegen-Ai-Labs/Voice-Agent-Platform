@@ -11,7 +11,7 @@ import base64
 import json
 import websockets
 
-from groq import Groq
+from groq import AsyncGroq
 from pydub import AudioSegment
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
@@ -41,7 +41,7 @@ class AgentConfig:
         "Never greet or introduce yourself unless asked. "
         "No lists, no bullet points, no filler words like 'Certainly!' or 'Of course!'."
     )
-    llm_model: str = "llama-3.1-8b-versatile"
+    llm_model: str = "allam-2-7b"
     knowledge_context: str = ""
     language: str = "en"
     tts_voice: str = _CARTESIA_DEFAULT_VOICE
@@ -59,7 +59,7 @@ class VoicePipeline:
         if not groq_key:
             raise ValueError("GROQ_API_KEY is not set in environment")
 
-        self._groq = Groq(api_key=groq_key)
+        self._groq = AsyncGroq(api_key=groq_key)
 
         self.last_transcript: str | None = None
         print("=" * 80)
@@ -121,7 +121,7 @@ class VoicePipeline:
 
         return "".join(parts)
 
-    def _collect_full_response(
+    async def _collect_full_response(
         self,
         transcript: str,
         conversation_history: list | None = None,
@@ -134,19 +134,18 @@ class VoicePipeline:
         messages.append({"role": "user", "content": transcript})
 
         try:
-            completion = self._groq.chat.completions.create(
+            completion = await self._groq.chat.completions.create(
                 messages=messages,
                 model=self.config.llm_model,
                 stream=False,
-                max_tokens=35,
-                temperature=0.15,
-                stop=["\n", "  "],
+                max_tokens=60,
+                temperature=0.3,
             )
             return (completion.choices[0].message.content or "").strip()
         except Exception as exc:
             raise RuntimeError(f"Groq LLM failed: {exc}") from exc
 
-    def _stream_llm_sentences(
+    async def _stream_llm_sentences(
         self,
         transcript: str,
         conversation_history: list | None = None,
@@ -162,19 +161,18 @@ class VoicePipeline:
         messages.append({"role": "user", "content": transcript})
 
         try:
-            stream = self._groq.chat.completions.create(
+            stream = await self._groq.chat.completions.create(
                 messages=messages,
                 model=self.config.llm_model,
                 stream=True,
-                max_tokens=35,
-                temperature=0.15,
-                stop=["\n", "  "],
+                max_tokens=60,
+                temperature=0.3,
             )
         except Exception as exc:
             raise RuntimeError(f"Groq LLM stream failed: {exc}") from exc
 
         buffer = ""
-        for chunk in stream:
+        async for chunk in stream:
             delta = chunk.choices[0].delta.content or ""
             buffer += delta
             # Yield a sentence as soon as we have a complete one
@@ -183,13 +181,13 @@ class VoicePipeline:
                 while idx != -1:
                     sentence = buffer[: idx + 1].strip()
                     buffer = buffer[idx + 1 :]
-                    if len(sentence.split()) >= 4:
+                    if len(sentence.split()) >= 1:
                         yield sentence
                     idx = buffer.find(end_char)
 
         # Yield any remaining text (no trailing punctuation)
         remainder = buffer.strip()
-        if remainder and len(remainder.split()) >= 4:
+        if remainder and len(remainder.split()) >= 1:
             yield remainder
 
   
@@ -505,7 +503,7 @@ class VoicePipeline:
             full_response_parts = []
             first_sentence = True
 
-            for sentence in self._stream_llm_sentences(
+            async for sentence in self._stream_llm_sentences(
                 transcript,
                 conversation_history,
             ):
@@ -559,9 +557,7 @@ class VoicePipeline:
         transcript = transcript.strip()
         if not transcript:
             return None
-        response_text = await asyncio.to_thread(
-            self._collect_full_response, transcript, conversation_history
-        )
+        response_text = await self._collect_full_response(transcript, conversation_history)
         self.last_transcript = transcript
         self.last_response = response_text
         return await self._synthesize(response_text)
@@ -572,7 +568,7 @@ class VoicePipeline:
         conversation_history: list | None = None,
     ) -> str:
         """Alias kept for any external callers."""
-        return self._collect_full_response(transcript, conversation_history)
+        return asyncio.run(self._collect_full_response(transcript, conversation_history))
 
 
 def _is_valid_sentence(s: str) -> bool:

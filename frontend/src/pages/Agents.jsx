@@ -7,7 +7,7 @@ const EMPTY_FORM = {
   system_prompt: "",
   voice: "",
   language: "en",
-  llm_model: "llama-3.3-70b-versatile",
+  llm_model: "openai/gpt-oss-20b",
 };
 
 export default function Agents() {
@@ -74,7 +74,7 @@ export default function Agents() {
     const payload = {
       ...form,
       language: "en",
-      llm_model: "llama-3.3-70b-versatile",
+      llm_model: "openai/gpt-oss-20b",
     };
 
     const res = await API.post("/agents", payload);
@@ -364,7 +364,7 @@ const selectedVoice = voices.find(
                       </label>
                       <input
                         className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-600"
-                        value="llama-3.3-70b-versatile"
+                        value="openai/gpt-oss-20b"
                         disabled
                       />
                     </div>
