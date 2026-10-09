@@ -9,6 +9,7 @@ import Agents from "./pages/Agents";
 import Calls from "./pages/Calls";
 import Analytics from "./pages/Analytics";
 import Settings from "./pages/Settings";
+import VoiceTest from "./pages/VoiceTest";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 
@@ -101,6 +102,17 @@ export default function App() {
             </PrivateRoute>
           }
         />
+        <Route
+        path="/voice-test"
+        element={
+          <PrivateRoute>
+            <Layout>
+              <VoiceTest />
+            </Layout>
+          </PrivateRoute>
+        }
+      />
+
 
       </Routes>
     </BrowserRouter>

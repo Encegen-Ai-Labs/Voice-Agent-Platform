@@ -28,3 +28,4 @@ class Agent(Base):
     workspace: Mapped["Workspace"] = relationship(back_populates="agents")
     phone_numbers: Mapped[list["PhoneNumber"]] = relationship(back_populates="agent")
     calls: Mapped[list["Call"]] = relationship(back_populates="agent")
+    knowledge_base_entries: Mapped[list["KnowledgeBase"]] = relationship(back_populates="agent")
