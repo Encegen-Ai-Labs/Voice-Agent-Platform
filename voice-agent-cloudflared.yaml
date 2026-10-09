@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: voice-agent-cloudflared
+  namespace: voice-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: voice-agent-cloudflared
+  template:
+    metadata:
+      labels:
+        app: voice-agent-cloudflared
+    spec:
+      containers:
+        - name: cloudflared
+          image: cloudflare/cloudflared:latest
+          args:
+            - tunnel
+            - --no-autoupdate
+            - --url
+            - http://voice-agent-frontend:80

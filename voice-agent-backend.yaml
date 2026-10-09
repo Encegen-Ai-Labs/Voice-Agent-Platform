@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: voice-agent-backend
+  namespace: voice-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: voice-agent-backend
+  template:
+    metadata:
+      labels:
+        app: voice-agent-backend
+    spec:
+      containers:
+        - name: backend
+          image: voice-agent-backend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - secretRef:
+                name: voice-agent-backend-env
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: voice-agent-backend
+  namespace: voice-agent
+spec:
+  selector:
+    app: voice-agent-backend
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000
+  type: ClusterIP
