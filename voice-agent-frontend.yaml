@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: voice-agent-frontend
+  namespace: voice-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: voice-agent-frontend
+  template:
+    metadata:
+      labels:
+        app: voice-agent-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: voice-agent-frontend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: voice-agent-frontend
+  namespace: voice-agent
+spec:
+  selector:
+    app: voice-agent-frontend
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+  type: ClusterIP

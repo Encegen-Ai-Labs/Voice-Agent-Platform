@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
+<<<<<<< HEAD
+import { useLocation } from "react-router-dom";
+
+=======
 import { useLocation, useNavigate } from "react-router-dom";
 import API from "../services/api";
+>>>>>>> 873dfff08b49a6083f5b2039f48b375bc1380869
 
 export default function TopBar() {
   const [workspaceName, setWorkspaceName] = useState("");
@@ -16,6 +21,11 @@ export default function TopBar() {
   };
 
   useEffect(() => {
+<<<<<<< HEAD
+  const workspace = localStorage.getItem("workspace");
+  setWorkspaceName(workspace || "");
+}, []);
+=======
     const fetchUser = async () => {
       try {
         const res = await API.get("/auth/me");
@@ -30,6 +40,7 @@ export default function TopBar() {
 
     fetchUser();
   }, []);
+>>>>>>> 873dfff08b49a6083f5b2039f48b375bc1380869
 
   const handleLogout = () => {
     localStorage.removeItem("token");
