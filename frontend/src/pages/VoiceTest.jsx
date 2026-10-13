@@ -135,7 +135,7 @@ export default function VoiceTest() {
 
       setStatus("Connecting to WebSocket...");
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const wsUrl = `${protocol}//localhost:8000/api/voice-test/ws?token=${token}`;
+      const wsUrl = `${protocol}//${window.location.host}/api/voice-test/ws?token=${encodeURIComponent(token)}`;
       
       wsRef.current = new WebSocket(wsUrl);
 
